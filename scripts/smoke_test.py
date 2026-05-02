@@ -13,6 +13,10 @@ PUBLIC_ENDPOINTS = [
     "/feedback",
     "/decision/BTCUSDT",
     "/feed?symbols=BTCUSDT,ETHUSDT",
+    "/?lang=ua",
+    "/beta?lang=ua",
+    "/feedback?lang=ua",
+    "/login?lang=ua",
 ]
 
 PROTECTED_ENDPOINTS = [

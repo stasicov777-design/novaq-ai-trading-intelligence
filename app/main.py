@@ -1,6 +1,6 @@
 ﻿from datetime import datetime, timezone
 from html import escape
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,6 +22,12 @@ from app.services.feedback_service import (
     get_feedback_summary,
     init_feedback_db,
     list_feedback_entries,
+)
+from app.services.i18n import (
+    LANG_COOKIE_NAME,
+    get_lang_from_request,
+    normalize_lang,
+    t,
 )
 from app.services.market_data import fetch_market_data
 from app.services.market_state import classify_market_state
@@ -50,6 +56,37 @@ def startup_event():
     init_feedback_db()
 
 
+def safe_next_path(next_path: str) -> str:
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return "/"
+    if "\n" in next_path or "\r" in next_path:
+        return "/"
+
+    return next_path
+
+
+def language_switch_html(lang: str, path: str) -> str:
+    safe_path = safe_next_path(path)
+    next_param = quote(safe_path, safe="/")
+    en_active = " active" if lang == "en" else ""
+    ua_active = " active" if lang == "ua" else ""
+
+    return f"""
+            <div class="language-switch" aria-label="Language switch">
+                <a class="lang-link{en_active}" href="/set-language/en?next={next_param}">EN</a>
+                <a class="lang-link{ua_active}" href="/set-language/ua?next={next_param}">UA</a>
+            </div>
+    """
+
+
+def render_html(template: str, values: dict[str, str]) -> str:
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value))
+
+    return rendered
+
+
 @app.get("/api")
 def api_root():
     return {
@@ -76,13 +113,31 @@ def api_root():
         "health": "/health",
         "access_control": "enabled" if is_access_enabled() else "disabled",
         "storage_backend": get_storage_backend(),
+        "languages": ["en", "ua"],
+        "default_language": "en",
         "time_utc": datetime.now(timezone.utc).isoformat()
     }
 
 
+@app.get("/set-language/{lang}")
+def set_language(lang: str, next: str = "/"):
+    normalized = normalize_lang(lang)
+    response = RedirectResponse(url=safe_next_path(next), status_code=303)
+    response.set_cookie(
+        key=LANG_COOKIE_NAME,
+        value=normalized,
+        httponly=False,
+        secure=False,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 365,
+    )
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
-def home():
-    return """
+def home(request: Request):
+    lang = get_lang_from_request(request)
+    return render_html("""
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -178,6 +233,38 @@ def home():
             font-size: 12px;
             font-weight: 800;
             white-space: nowrap;
+        }
+
+        .top-actions,
+        .language-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .language-switch {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 3px;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .lang-link {
+            min-width: 34px;
+            border-radius: 7px;
+            padding: 6px 8px;
+            color: var(--muted);
+            text-align: center;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 950;
+        }
+
+        .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
         }
 
         .hero {
@@ -443,6 +530,7 @@ def home():
             }
 
             .topbar,
+            .top-actions,
             .section-head,
             footer {
                 align-items: flex-start;
@@ -483,28 +571,31 @@ def home():
         <header class="topbar">
             <div class="brand" aria-label="NOVAQ AI">
                 <span class="brand-mark">NQ</span>
-                <span>NOVAQ AI</span>
+                <span>{{BRAND}}</span>
             </div>
-            <div class="status">SYSTEM ONLINE</div>
+            <div class="top-actions">
+                {{LANG_SWITCH}}
+                <div class="status">{{SYSTEM_ONLINE}}</div>
+            </div>
         </header>
 
         <section class="hero">
             <div class="hero-copy">
                 <p class="eyebrow">AI Decision Intelligence Layer</p>
-                <h1>Real-Time Crypto Decision Intelligence</h1>
+                <h1>{{HEADLINE_LANDING}}</h1>
                 <p class="subtitle">
-                    Understand what to do now across crypto markets with live data, market state, signal quality, risk logic, paper tracking, and performance analytics.
+                    {{SUBTITLE_LANDING}}
                 </p>
                 <p class="disclaimer">
-                    Educational analytics only. Not financial advice. NOVAQ AI does not execute trades and does not access user funds.
+                    {{DISCLAIMER}}
                 </p>
                 <div class="actions" aria-label="Primary navigation">
-                    <a class="button" href="/feed-dashboard">Open Decision Feed</a>
-                    <a class="button secondary" href="/beta">Beta Guide</a>
-                    <a class="button" href="/login">Demo Login</a>
-                    <a class="button secondary" href="/performance-dashboard">View Analytics</a>
-                    <a class="button secondary" href="/feedback">Give Feedback</a>
-                    <a class="button secondary" href="/docs">API Docs</a>
+                    <a class="button" href="/feed-dashboard">{{OPEN_DECISION_FEED}}</a>
+                    <a class="button secondary" href="/beta">{{BETA_GUIDE}}</a>
+                    <a class="button" href="/login">{{DEMO_LOGIN}}</a>
+                    <a class="button secondary" href="/performance-dashboard">{{VIEW_ANALYTICS}}</a>
+                    <a class="button secondary" href="/feedback">{{GIVE_FEEDBACK}}</a>
+                    <a class="button secondary" href="/docs">{{API_DOCS}}</a>
                 </div>
             </div>
 
@@ -593,17 +684,33 @@ def home():
 
         <footer>
             <div>NOVAQ AI v{{APP_VERSION}}</div>
-            <div>Educational analytics only. Not financial advice. New users can start with the Beta Guide.</div>
+            <div>Educational analytics only. Not financial advice. {{BETA_FOOTER_NOTE}}</div>
         </footer>
     </main>
 </body>
 </html>
-    """.replace("{{APP_VERSION}}", APP_VERSION)
+    """, {
+        "APP_VERSION": APP_VERSION,
+        "BRAND": t(lang, "brand"),
+        "LANG_SWITCH": language_switch_html(lang, "/"),
+        "SYSTEM_ONLINE": t(lang, "system_online"),
+        "HEADLINE_LANDING": t(lang, "headline_landing"),
+        "SUBTITLE_LANDING": t(lang, "subtitle_landing"),
+        "DISCLAIMER": t(lang, "disclaimer"),
+        "OPEN_DECISION_FEED": t(lang, "open_decision_feed"),
+        "BETA_GUIDE": t(lang, "beta_guide"),
+        "DEMO_LOGIN": t(lang, "demo_login"),
+        "VIEW_ANALYTICS": t(lang, "view_analytics"),
+        "GIVE_FEEDBACK": t(lang, "give_feedback"),
+        "API_DOCS": t(lang, "api_docs"),
+        "BETA_FOOTER_NOTE": t(lang, "beta_footer_note"),
+    })
 
 
 @app.get("/beta", response_class=HTMLResponse)
-def beta_onboarding():
-    return """
+def beta_onboarding(request: Request):
+    lang = get_lang_from_request(request)
+    return render_html("""
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -707,6 +814,32 @@ def beta_onboarding():
             justify-content: flex-end;
         }
 
+        .language-switch {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 3px;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .lang-link {
+            min-width: 34px;
+            border-radius: 7px;
+            padding: 6px 8px;
+            color: var(--muted);
+            text-align: center;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 950;
+        }
+
+        .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+        }
+
         .nav a,
         .cta a {
             border-radius: 8px;
@@ -723,6 +856,19 @@ def beta_onboarding():
             color: var(--text);
             background: rgba(255, 255, 255, 0.055);
             border: 1px solid var(--line);
+        }
+
+        .language-switch .lang-link {
+            min-width: 34px;
+            padding: 6px 8px;
+            color: var(--muted);
+            background: transparent;
+            border: 0;
+        }
+
+        .language-switch .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
         }
 
         .hero {
@@ -925,153 +1071,228 @@ def beta_onboarding():
             <div class="brand-wrap">
                 <div class="brand" aria-label="NOVAQ AI">
                     <span class="brand-mark">NQ</span>
-                    <span>NOVAQ AI</span>
+                    <span>{{BRAND}}</span>
                 </div>
-                <span class="badge">BETA GUIDE</span>
+                <span class="badge">{{BETA_BADGE}}</span>
             </div>
             <nav class="nav" aria-label="Beta guide navigation">
-                <a href="/">Home</a>
-                <a href="/feed-dashboard">Decision Feed</a>
-                <a class="secondary" href="/feedback">Feedback</a>
-                <a class="secondary" href="/docs">API Docs</a>
+                {{LANG_SWITCH}}
+                <a href="/">{{HOME}}</a>
+                <a href="/feed-dashboard">{{DECISION_FEED}}</a>
+                <a class="secondary" href="/feedback">{{FEEDBACK}}</a>
+                <a class="secondary" href="/docs">{{API_DOCS}}</a>
             </nav>
         </header>
 
         <section class="hero">
             <div>
-                <h1>Start Testing NOVAQ AI</h1>
-                <p class="subtitle">A simple guide for beta users: understand what the platform shows, how to read decisions, and how to send useful feedback.</p>
+                <h1>{{START_TESTING}}</h1>
+                <p class="subtitle">{{BETA_SUBTITLE}}</p>
             </div>
             <aside class="disclaimer-box">
-                Educational analytics only. Not financial advice. NOVAQ AI does not execute trades and does not access user funds.
+                {{DISCLAIMER}}
             </aside>
         </section>
 
         <section class="section">
-            <h2>What is NOVAQ AI?</h2>
-            <p>NOVAQ AI is an AI Decision Intelligence Layer for crypto markets. It does not trade for you. It analyzes live market data, market state, signal quality and risk, then explains the current decision in simple terms.</p>
+            <h2>{{WHAT_IS_NOVAQ}}</h2>
+            <p>{{WHAT_IS_NOVAQ_TEXT}}</p>
         </section>
 
         <section class="section">
-            <h2>How to test it</h2>
+            <h2>{{HOW_TO_TEST}}</h2>
             <div class="steps">
                 <article class="card">
                     <div class="step-number">1</div>
-                    <h3>Open Decision Feed</h3>
-                    <p>Go to /feed-dashboard and review the current market decisions.</p>
+                    <h3>{{OPEN_DECISION_FEED_STEP}}</h3>
+                    <p>{{OPEN_DECISION_FEED_STEP_TEXT}}</p>
                 </article>
                 <article class="card">
                     <div class="step-number">2</div>
-                    <h3>Pick 2-3 assets</h3>
-                    <p>Compare BTCUSDT, ETHUSDT, SOLUSDT or other symbols.</p>
+                    <h3>{{PICK_ASSETS}}</h3>
+                    <p>{{PICK_ASSETS_TEXT}}</p>
                 </article>
                 <article class="card">
                     <div class="step-number">3</div>
-                    <h3>Read the score</h3>
-                    <p>Look at action, confidence, opportunity score, risk level and reasoning.</p>
+                    <h3>{{READ_THE_SCORE}}</h3>
+                    <p>{{READ_THE_SCORE_TEXT}}</p>
                 </article>
                 <article class="card">
                     <div class="step-number">4</div>
-                    <h3>Do not trade blindly</h3>
-                    <p>Treat it as research, not financial advice.</p>
+                    <h3>{{DO_NOT_TRADE_BLINDLY}}</h3>
+                    <p>{{DO_NOT_TRADE_BLINDLY_TEXT}}</p>
                 </article>
                 <article class="card">
                     <div class="step-number">5</div>
-                    <h3>Send feedback</h3>
-                    <p>Tell what was clear, confusing, missing or valuable.</p>
+                    <h3>{{SEND_FEEDBACK}}</h3>
+                    <p>{{SEND_FEEDBACK_STEP_TEXT}}</p>
                 </article>
             </div>
         </section>
 
         <section class="section">
-            <h2>How to read a decision</h2>
+            <h2>{{HOW_TO_READ_DECISION}}</h2>
             <div class="decision-grid">
                 <article class="card decision-card">
-                    <span class="field-name">Action</span>
-                    <p>BUY / SELL / HOLD / WAIT. What the system thinks is most reasonable right now.</p>
+                    <span class="field-name">{{ACTION}}</span>
+                    <p>{{ACTION_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Confidence</span>
-                    <p>How strong the system thinks the decision is, from 0 to 100%.</p>
+                    <span class="field-name">{{CONFIDENCE}}</span>
+                    <p>{{CONFIDENCE_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Opportunity Score</span>
-                    <p>A ranking score from 0 to 100 for comparing assets.</p>
+                    <span class="field-name">{{OPPORTUNITY_SCORE}}</span>
+                    <p>{{OPPORTUNITY_SCORE_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Risk Level</span>
-                    <p>LOW / MEDIUM / HIGH / EXTREME. If risk is too high, the system should prefer WAIT.</p>
+                    <span class="field-name">{{RISK_LEVEL}}</span>
+                    <p>{{RISK_LEVEL_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Market State</span>
-                    <p>Trend, sideways, high volatility, low liquidity or mixed conditions.</p>
+                    <span class="field-name">{{MARKET_STATE}}</span>
+                    <p>{{MARKET_STATE_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Reasoning</span>
-                    <p>Simple explanation of why the decision was produced.</p>
+                    <span class="field-name">{{REASONING}}</span>
+                    <p>{{REASONING_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Failure Scenario</span>
-                    <p>What could go wrong.</p>
+                    <span class="field-name">{{FAILURE_SCENARIO}}</span>
+                    <p>{{FAILURE_SCENARIO_TEXT}}</p>
                 </article>
                 <article class="card decision-card">
-                    <span class="field-name">Safer Alternative</span>
-                    <p>A more conservative option.</p>
+                    <span class="field-name">{{SAFER_ALTERNATIVE}}</span>
+                    <p>{{SAFER_ALTERNATIVE_TEXT}}</p>
                 </article>
             </div>
         </section>
 
         <section class="section">
-            <h2>What feedback we need</h2>
+            <h2>{{WHAT_FEEDBACK_WE_NEED}}</h2>
             <div class="feedback-grid">
-                <article class="card"><h3>Understandability</h3><p>Was the platform easy to understand?</p></article>
-                <article class="card"><h3>Trust</h3><p>Did the decision cards look trustworthy?</p></article>
-                <article class="card"><h3>Confusion</h3><p>Which field was confusing?</p></article>
-                <article class="card"><h3>Workflow Value</h3><p>Would this help you before entering a trade?</p></article>
-                <article class="card"><h3>Missing Feature</h3><p>What feature is missing?</p></article>
-                <article class="card"><h3>Pricing Signal</h3><p>Would you pay for this if accuracy improves?</p></article>
+                <article class="card"><h3>{{UNDERSTANDABILITY}}</h3><p>{{UNDERSTANDABILITY_TEXT}}</p></article>
+                <article class="card"><h3>{{TRUST}}</h3><p>{{TRUST_TEXT}}</p></article>
+                <article class="card"><h3>{{CONFUSION}}</h3><p>{{CONFUSION_TEXT}}</p></article>
+                <article class="card"><h3>{{WORKFLOW_VALUE}}</h3><p>{{WORKFLOW_VALUE_TEXT}}</p></article>
+                <article class="card"><h3>{{MISSING_FEATURE}}</h3><p>{{MISSING_FEATURE_TEXT}}</p></article>
+                <article class="card"><h3>{{PRICING_SIGNAL}}</h3><p>{{PRICING_SIGNAL_TEXT}}</p></article>
             </div>
         </section>
 
         <section class="section">
-            <h2>Beta limitations</h2>
+            <h2>{{BETA_LIMITATIONS}}</h2>
             <div class="limits-grid">
-                <article class="card"><h3>Educational Only</h3><p>Signals are educational only.</p></article>
-                <article class="card"><h3>No Execution</h3><p>No real trade execution.</p></article>
-                <article class="card"><h3>No Funds Access</h3><p>No access to user funds.</p></article>
-                <article class="card"><h3>Data Availability</h3><p>Market data providers may be delayed or unavailable.</p></article>
-                <article class="card"><h3>Sample Size</h3><p>Performance data needs a larger sample size.</p></article>
-                <article class="card"><h3>Fast Iteration</h3><p>Beta version can change quickly.</p></article>
+                <article class="card"><h3>{{EDUCATIONAL_ONLY}}</h3><p>{{EDUCATIONAL_ONLY_TEXT}}</p></article>
+                <article class="card"><h3>{{NO_EXECUTION}}</h3><p>{{NO_EXECUTION_TEXT}}</p></article>
+                <article class="card"><h3>{{NO_FUNDS_ACCESS}}</h3><p>{{NO_FUNDS_ACCESS_TEXT}}</p></article>
+                <article class="card"><h3>{{DATA_AVAILABILITY}}</h3><p>{{DATA_AVAILABILITY_TEXT}}</p></article>
+                <article class="card"><h3>{{SAMPLE_SIZE}}</h3><p>{{SAMPLE_SIZE_TEXT}}</p></article>
+                <article class="card"><h3>{{FAST_ITERATION}}</h3><p>{{FAST_ITERATION_TEXT}}</p></article>
             </div>
         </section>
 
         <section class="section">
-            <h2>Start testing</h2>
+            <h2>{{START_TESTING_SECTION}}</h2>
             <div class="cta">
-                <a href="/feed-dashboard">Open Decision Feed</a>
-                <a href="/feedback">Send Feedback</a>
-                <a class="secondary" href="/login">Demo Login</a>
-                <a class="secondary" href="/docs">View API Docs</a>
+                <a href="/feed-dashboard">{{OPEN_DECISION_FEED}}</a>
+                <a href="/feedback">{{SEND_FEEDBACK}}</a>
+                <a class="secondary" href="/login">{{DEMO_LOGIN}}</a>
+                <a class="secondary" href="/docs">{{VIEW_API_DOCS}}</a>
             </div>
         </section>
 
         <footer>
-            <div>NOVAQ AI Beta Guide</div>
-            <div>Educational analytics only. Not financial advice.</div>
+            <div>NOVAQ AI {{BETA_GUIDE}}</div>
+            <div>{{DISCLAIMER_SHORT}}</div>
         </footer>
     </main>
 </body>
 </html>
-    """
+    """, {
+        "BRAND": t(lang, "brand"),
+        "BETA_BADGE": t(lang, "beta_badge"),
+        "LANG_SWITCH": language_switch_html(lang, "/beta"),
+        "HOME": t(lang, "home"),
+        "DECISION_FEED": t(lang, "decision_feed"),
+        "FEEDBACK": t(lang, "feedback"),
+        "API_DOCS": t(lang, "api_docs"),
+        "START_TESTING": t(lang, "start_testing"),
+        "BETA_SUBTITLE": t(lang, "beta_subtitle"),
+        "DISCLAIMER": t(lang, "disclaimer"),
+        "WHAT_IS_NOVAQ": t(lang, "what_is_novaq"),
+        "WHAT_IS_NOVAQ_TEXT": t(lang, "what_is_novaq_text"),
+        "HOW_TO_TEST": t(lang, "how_to_test"),
+        "OPEN_DECISION_FEED_STEP": t(lang, "open_decision_feed_step"),
+        "OPEN_DECISION_FEED_STEP_TEXT": t(lang, "open_decision_feed_step_text"),
+        "PICK_ASSETS": t(lang, "pick_assets"),
+        "PICK_ASSETS_TEXT": t(lang, "pick_assets_text"),
+        "READ_THE_SCORE": t(lang, "read_the_score"),
+        "READ_THE_SCORE_TEXT": t(lang, "read_the_score_text"),
+        "DO_NOT_TRADE_BLINDLY": t(lang, "do_not_trade_blindly"),
+        "DO_NOT_TRADE_BLINDLY_TEXT": t(lang, "do_not_trade_blindly_text"),
+        "SEND_FEEDBACK": t(lang, "send_feedback"),
+        "SEND_FEEDBACK_STEP_TEXT": t(lang, "send_feedback_step_text"),
+        "HOW_TO_READ_DECISION": t(lang, "how_to_read_decision"),
+        "ACTION": t(lang, "action"),
+        "ACTION_TEXT": t(lang, "action_text"),
+        "CONFIDENCE": t(lang, "confidence"),
+        "CONFIDENCE_TEXT": t(lang, "confidence_text"),
+        "OPPORTUNITY_SCORE": t(lang, "opportunity_score"),
+        "OPPORTUNITY_SCORE_TEXT": t(lang, "opportunity_score_text"),
+        "RISK_LEVEL": t(lang, "risk_level"),
+        "RISK_LEVEL_TEXT": t(lang, "risk_level_text"),
+        "MARKET_STATE": t(lang, "market_state"),
+        "MARKET_STATE_TEXT": t(lang, "market_state_text"),
+        "REASONING": t(lang, "reasoning"),
+        "REASONING_TEXT": t(lang, "reasoning_text"),
+        "FAILURE_SCENARIO": t(lang, "failure_scenario"),
+        "FAILURE_SCENARIO_TEXT": t(lang, "failure_scenario_text"),
+        "SAFER_ALTERNATIVE": t(lang, "safer_alternative"),
+        "SAFER_ALTERNATIVE_TEXT": t(lang, "safer_alternative_text"),
+        "WHAT_FEEDBACK_WE_NEED": t(lang, "what_feedback_we_need"),
+        "UNDERSTANDABILITY": t(lang, "understandability"),
+        "UNDERSTANDABILITY_TEXT": t(lang, "understandability_text"),
+        "TRUST": t(lang, "trust"),
+        "TRUST_TEXT": t(lang, "trust_text"),
+        "CONFUSION": t(lang, "confusion"),
+        "CONFUSION_TEXT": t(lang, "confusion_text"),
+        "WORKFLOW_VALUE": t(lang, "workflow_value"),
+        "WORKFLOW_VALUE_TEXT": t(lang, "workflow_value_text"),
+        "MISSING_FEATURE": t(lang, "missing_feature"),
+        "MISSING_FEATURE_TEXT": t(lang, "missing_feature_text"),
+        "PRICING_SIGNAL": t(lang, "pricing_signal"),
+        "PRICING_SIGNAL_TEXT": t(lang, "pricing_signal_text"),
+        "BETA_LIMITATIONS": t(lang, "beta_limitations"),
+        "EDUCATIONAL_ONLY": t(lang, "educational_only"),
+        "EDUCATIONAL_ONLY_TEXT": t(lang, "educational_only_text"),
+        "NO_EXECUTION": t(lang, "no_execution"),
+        "NO_EXECUTION_TEXT": t(lang, "no_execution_text"),
+        "NO_FUNDS_ACCESS": t(lang, "no_funds_access"),
+        "NO_FUNDS_ACCESS_TEXT": t(lang, "no_funds_access_text"),
+        "DATA_AVAILABILITY": t(lang, "data_availability"),
+        "DATA_AVAILABILITY_TEXT": t(lang, "data_availability_text"),
+        "SAMPLE_SIZE": t(lang, "sample_size"),
+        "SAMPLE_SIZE_TEXT": t(lang, "sample_size_text"),
+        "FAST_ITERATION": t(lang, "fast_iteration"),
+        "FAST_ITERATION_TEXT": t(lang, "fast_iteration_text"),
+        "START_TESTING_SECTION": t(lang, "start_testing_section"),
+        "OPEN_DECISION_FEED": t(lang, "open_decision_feed"),
+        "DEMO_LOGIN": t(lang, "demo_login"),
+        "VIEW_API_DOCS": t(lang, "view_api_docs"),
+        "BETA_GUIDE": t(lang, "beta_guide"),
+        "DISCLAIMER_SHORT": "Educational analytics only. Not financial advice." if lang == "en" else "Лише освітня аналітика. Не фінансова порада.",
+    })
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
+    lang = get_lang_from_request(request)
     error_block = ""
     if request.query_params.get("error") == "1":
-        error_block = '<div class="error">Invalid access code.</div>'
+        error_block = f'<div class="error">{t(lang, "invalid_access_code")}</div>'
 
-    return """
+    return render_html("""
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -1125,6 +1346,40 @@ def login_page(request: Request):
             margin-bottom: 18px;
             font-size: 22px;
             font-weight: 950;
+        }
+
+        .top-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .language-switch {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 3px;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .lang-link {
+            min-width: 34px;
+            border-radius: 7px;
+            padding: 6px 8px;
+            color: var(--muted);
+            text-align: center;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 950;
+        }
+
+        .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
         }
 
         .brand-mark {
@@ -1230,33 +1485,48 @@ def login_page(request: Request):
 
 <body>
     <main class="shell">
-        <div class="brand" aria-label="NOVAQ AI">
-            <span class="brand-mark">NQ</span>
-            <span>NOVAQ AI</span>
+        <div class="top-row">
+            <div class="brand" aria-label="NOVAQ AI">
+                <span class="brand-mark">NQ</span>
+                <span>{{BRAND}}</span>
+            </div>
+            {{LANG_SWITCH}}
         </div>
 
         <section class="panel">
-            <h1>Protected Demo Access</h1>
-            <p class="subtitle">Unlock paper tracking and performance analytics for this demo environment.</p>
+            <h1>{{PROTECTED_DEMO_ACCESS}}</h1>
+            <p class="subtitle">{{LOGIN_SUBTITLE}}</p>
             {{ERROR_BLOCK}}
-            <form method="post" action="/login">
+            <form method="post" action="/login?lang={{LANG}}">
                 <input type="password" name="access_code" placeholder="Enter access code" autocomplete="current-password" required />
-                <button type="submit">Unlock Demo</button>
+                <button type="submit">{{UNLOCK_DEMO}}</button>
             </form>
             <div class="secondary-row">
-                <a class="link-button" href="/feed-dashboard">Decision Feed</a>
-                <a class="link-button" href="/">Home</a>
+                <a class="link-button" href="/feed-dashboard">{{DECISION_FEED}}</a>
+                <a class="link-button" href="/">{{HOME}}</a>
             </div>
-            <p class="disclaimer">Access is required for paper tracking and performance analytics.</p>
+            <p class="disclaimer">{{ACCESS_REQUIRED_NOTE}}</p>
         </section>
     </main>
 </body>
 </html>
-    """.replace("{{ERROR_BLOCK}}", error_block)
+    """, {
+        "LANG": lang,
+        "BRAND": t(lang, "brand"),
+        "LANG_SWITCH": language_switch_html(lang, "/login"),
+        "PROTECTED_DEMO_ACCESS": t(lang, "protected_demo_access"),
+        "LOGIN_SUBTITLE": t(lang, "login_subtitle"),
+        "ERROR_BLOCK": error_block,
+        "UNLOCK_DEMO": t(lang, "unlock_demo"),
+        "DECISION_FEED": t(lang, "decision_feed"),
+        "HOME": t(lang, "home"),
+        "ACCESS_REQUIRED_NOTE": t(lang, "access_required_note"),
+    })
 
 
 @app.post("/login")
 async def login_submit(request: Request):
+    lang = get_lang_from_request(request)
     body = await request.body()
     form_data = parse_qs(body.decode("utf-8"))
     access_code = form_data.get("access_code", [""])[0]
@@ -1273,7 +1543,7 @@ async def login_submit(request: Request):
         )
         return response
 
-    return RedirectResponse(url="/login?error=1", status_code=303)
+    return RedirectResponse(url=f"/login?error=1&lang={lang}", status_code=303)
 
 
 @app.get("/logout")
@@ -1284,8 +1554,9 @@ def logout():
 
 
 @app.get("/feedback", response_class=HTMLResponse)
-def feedback_page():
-    return """
+def feedback_page(request: Request):
+    lang = get_lang_from_request(request)
+    return render_html("""
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -1367,6 +1638,32 @@ def feedback_page():
             justify-content: flex-end;
         }
 
+        .language-switch {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 3px;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .lang-link {
+            min-width: 34px;
+            border-radius: 7px;
+            padding: 6px 8px;
+            color: var(--muted);
+            text-align: center;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 950;
+        }
+
+        .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+        }
+
         .nav a,
         button {
             border: 0;
@@ -1381,6 +1678,19 @@ def feedback_page():
 
         .nav a {
             padding: 10px 12px;
+        }
+
+        .language-switch .lang-link {
+            min-width: 34px;
+            padding: 6px 8px;
+            color: var(--muted);
+            background: transparent;
+            border: 0;
+        }
+
+        .language-switch .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
         }
 
         .hero {
@@ -1505,34 +1815,35 @@ def feedback_page():
         <header class="topbar">
             <div class="brand" aria-label="NOVAQ AI">
                 <span class="brand-mark">NQ</span>
-                <span>NOVAQ AI</span>
+                <span>{{BRAND}}</span>
             </div>
             <nav class="nav" aria-label="Feedback navigation">
-                <a href="/">Home</a>
-                <a href="/feed-dashboard">Decision Feed</a>
-                <a href="/docs">API Docs</a>
+                {{LANG_SWITCH}}
+                <a href="/">{{HOME}}</a>
+                <a href="/feed-dashboard">{{DECISION_FEED}}</a>
+                <a href="/docs">{{API_DOCS}}</a>
             </nav>
         </header>
 
         <section class="hero">
-            <h1>NOVAQ AI Beta Feedback</h1>
-            <p class="subtitle">Help improve the AI Decision Intelligence Layer</p>
-            <p class="disclaimer">Educational analytics only. Not financial advice.</p>
+            <h1>{{FEEDBACK_TITLE}}</h1>
+            <p class="subtitle">{{FEEDBACK_SUBTITLE}}</p>
+            <p class="disclaimer">{{DISCLAIMER_SHORT}}</p>
         </section>
 
         <section class="panel">
-            <form method="post" action="/feedback">
+            <form method="post" action="/feedback?lang={{LANG}}">
                 <div class="grid">
                     <label>
-                        Name
+                        {{NAME}}
                         <input type="text" name="name" autocomplete="name" />
                     </label>
                     <label>
-                        Contact
+                        {{CONTACT}}
                         <input type="text" name="contact" autocomplete="email" />
                     </label>
                     <label>
-                        Experience Level
+                        {{EXPERIENCE_LEVEL}}
                         <select name="experience_level">
                             <option value="">Select one</option>
                             <option>Beginner</option>
@@ -1542,7 +1853,7 @@ def feedback_page():
                         </select>
                     </label>
                     <label>
-                        Main Use Case
+                        {{MAIN_USE_CASE}}
                         <select name="main_use_case">
                             <option value="">Select one</option>
                             <option>Learn trading</option>
@@ -1554,7 +1865,7 @@ def feedback_page():
                         </select>
                     </label>
                     <label>
-                        Clarity Rating
+                        {{CLARITY_RATING}}
                         <select name="clarity_rating">
                             <option value="0">Select 1-5</option>
                             <option value="1">1</option>
@@ -1565,7 +1876,7 @@ def feedback_page():
                         </select>
                     </label>
                     <label>
-                        Trust Rating
+                        {{TRUST_RATING}}
                         <select name="trust_rating">
                             <option value="0">Select 1-5</option>
                             <option value="1">1</option>
@@ -1576,7 +1887,7 @@ def feedback_page():
                         </select>
                     </label>
                     <label>
-                        Would Pay
+                        {{WOULD_PAY}}
                         <select name="would_pay">
                             <option value="">Select one</option>
                             <option value="yes">yes</option>
@@ -1585,7 +1896,7 @@ def feedback_page():
                         </select>
                     </label>
                     <label>
-                        Price Preference
+                        {{PRICE_PREFERENCE}}
                         <select name="price_preference">
                             <option value="">Select one</option>
                             <option>Free only</option>
@@ -1597,33 +1908,57 @@ def feedback_page():
                         </select>
                     </label>
                     <label class="full">
-                        What did you like?
+                        {{LIKED}}
                         <textarea name="liked"></textarea>
                     </label>
                     <label class="full">
-                        What was confusing?
+                        {{CONFUSING}}
                         <textarea name="confusing"></textarea>
                     </label>
                     <label class="full">
-                        Missing features
+                        {{MISSING_FEATURES}}
                         <textarea name="missing_features"></textarea>
                     </label>
                     <label class="full">
-                        General feedback
+                        {{GENERAL_FEEDBACK}}
                         <textarea name="general_feedback"></textarea>
                     </label>
                 </div>
-                <button type="submit">Send Feedback</button>
+                <button type="submit">{{SEND_FEEDBACK}}</button>
             </form>
         </section>
     </main>
 </body>
 </html>
-    """
+    """, {
+        "LANG": lang,
+        "BRAND": t(lang, "brand"),
+        "LANG_SWITCH": language_switch_html(lang, "/feedback"),
+        "HOME": t(lang, "home"),
+        "DECISION_FEED": t(lang, "decision_feed"),
+        "API_DOCS": t(lang, "api_docs"),
+        "FEEDBACK_TITLE": t(lang, "feedback_title"),
+        "FEEDBACK_SUBTITLE": t(lang, "feedback_subtitle"),
+        "DISCLAIMER_SHORT": "Educational analytics only. Not financial advice." if lang == "en" else "Лише освітня аналітика. Не фінансова порада.",
+        "NAME": t(lang, "name"),
+        "CONTACT": t(lang, "contact"),
+        "EXPERIENCE_LEVEL": t(lang, "experience_level"),
+        "MAIN_USE_CASE": t(lang, "main_use_case"),
+        "CLARITY_RATING": t(lang, "clarity_rating"),
+        "TRUST_RATING": t(lang, "trust_rating"),
+        "WOULD_PAY": t(lang, "would_pay"),
+        "PRICE_PREFERENCE": t(lang, "price_preference"),
+        "LIKED": t(lang, "liked"),
+        "CONFUSING": t(lang, "confusing"),
+        "MISSING_FEATURES": t(lang, "missing_features"),
+        "GENERAL_FEEDBACK": t(lang, "general_feedback"),
+        "SEND_FEEDBACK": t(lang, "send_feedback"),
+    })
 
 
 @app.post("/feedback", response_class=HTMLResponse)
 async def submit_feedback(request: Request):
+    lang = get_lang_from_request(request)
     body = await request.body()
     form_data = parse_qs(body.decode("utf-8"))
 
@@ -1648,7 +1983,7 @@ async def submit_feedback(request: Request):
         }
     )
 
-    return """
+    return render_html("""
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -1681,6 +2016,35 @@ async def submit_feedback(request: Request):
             padding: 26px;
             background: rgba(14, 24, 42, 0.92);
             box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+        }
+
+        .language-switch {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            width: fit-content;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 3px;
+            margin-bottom: 18px;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .lang-link {
+            min-width: 34px;
+            border-radius: 7px;
+            padding: 6px 8px;
+            color: #91a0b8;
+            background: transparent;
+            text-align: center;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 950;
+        }
+
+        .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, #00ffc2, #4b8dff);
         }
 
         h1 {
@@ -1717,6 +2081,19 @@ async def submit_feedback(request: Request):
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
+        .language-switch .lang-link {
+            min-width: 34px;
+            padding: 6px 8px;
+            color: #91a0b8;
+            background: transparent;
+            border: 0;
+        }
+
+        .language-switch .lang-link.active {
+            color: #031018;
+            background: linear-gradient(135deg, #00ffc2, #4b8dff);
+        }
+
         @media (max-width: 520px) {
             a {
                 width: 100%;
@@ -1728,16 +2105,23 @@ async def submit_feedback(request: Request):
 
 <body>
     <main class="panel">
-        <h1>Thank you</h1>
-        <p>Your feedback helps improve NOVAQ AI.</p>
+        {{LANG_SWITCH}}
+        <h1>{{THANK_YOU}}</h1>
+        <p>{{THANK_YOU_TEXT}}</p>
         <div class="actions">
-            <a href="/feed-dashboard">Back to Decision Feed</a>
-            <a class="secondary" href="/">Home</a>
+            <a href="/feed-dashboard">{{BACK_TO_DECISION_FEED}}</a>
+            <a class="secondary" href="/">{{HOME}}</a>
         </div>
     </main>
 </body>
 </html>
-    """
+    """, {
+        "LANG_SWITCH": language_switch_html(lang, "/feedback"),
+        "THANK_YOU": t(lang, "thank_you"),
+        "THANK_YOU_TEXT": t(lang, "thank_you_text"),
+        "BACK_TO_DECISION_FEED": t(lang, "back_to_decision_feed"),
+        "HOME": t(lang, "home"),
+    })
 
 
 @app.get("/admin-feedback", response_class=HTMLResponse)

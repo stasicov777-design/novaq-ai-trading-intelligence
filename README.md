@@ -108,6 +108,11 @@ Public beta onboarding page:
 
 It explains how to test the product, how to read decisions, and how to send useful feedback.
 
+## Language Switch
+
+Public pages support EN / UA language switching without browser auto-translation.
+Technical enum values remain in English to avoid incorrect translations.
+
 ## Storage
 
 NOVAQ AI supports two storage modes:
