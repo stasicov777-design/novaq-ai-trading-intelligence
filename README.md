@@ -122,6 +122,13 @@ NOVAQ AI supports two storage modes:
 
 Tracking and feedback data use PostgreSQL automatically if `DATABASE_URL` starts with `postgres://` or `postgresql://`.
 
+## Health Checks
+
+- `/health` - lightweight app health
+- `/health/db` - storage backend and table connectivity check
+
+The DB health endpoint does not expose `DATABASE_URL` or credentials.
+
 ## Deployment Notes
 
 SQLite is OK for a local MVP. For production with many users, move to PostgreSQL.

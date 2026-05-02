@@ -9,6 +9,7 @@ PUBLIC_ENDPOINTS = [
     "/",
     "/api",
     "/health",
+    "/health/db",
     "/beta",
     "/feedback",
     "/decision/BTCUSDT",
@@ -53,6 +54,24 @@ def main() -> int:
                 continue
 
             print(f"Storage backend: {data.get('storage_backend', 'unknown')}")
+
+        if endpoint == "/health/db":
+            try:
+                data = response.json()
+            except ValueError:
+                print("ERROR /health/db: invalid JSON")
+                failed = True
+                continue
+
+            required_keys = {"storage_backend", "status", "checks"}
+            missing_keys = required_keys - set(data.keys())
+            if missing_keys:
+                print(f"ERROR /health/db: missing keys {sorted(missing_keys)}")
+                failed = True
+                continue
+
+            if data.get("status") != "ok":
+                print(f"WARNING /health/db: status {data.get('status')}")
 
     for endpoint in ["/login"]:
         url = f"{BASE_URL}{endpoint}"

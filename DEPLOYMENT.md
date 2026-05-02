@@ -39,6 +39,15 @@ Without `ACCESS_CODE`, the app uses the default demo code. For public deployment
 Note:
 Without `DATABASE_URL`, the app uses SQLite fallback. SQLite is acceptable for demo, but PostgreSQL is recommended for real beta users.
 
+## Render Verification Checklist
+
+After deployment:
+
+- Open `/health`
+- Open `/health/db`
+- Confirm `storage_backend` is `postgres`
+- Confirm `status` is `ok`
+
 ## Docker
 
 ```bash
