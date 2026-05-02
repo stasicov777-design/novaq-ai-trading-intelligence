@@ -66,6 +66,7 @@ def api_root():
         "evaluate_open_signals": "/evaluate-open-signals",
         "performance_analytics": "/performance-analytics",
         "performance_dashboard": "/performance-dashboard",
+        "beta": "/beta",
         "feedback": "/feedback",
         "feedback_summary": "/api/feedback-summary",
         "admin_feedback": "/admin-feedback",
@@ -499,6 +500,7 @@ def home():
                 </p>
                 <div class="actions" aria-label="Primary navigation">
                     <a class="button" href="/feed-dashboard">Open Decision Feed</a>
+                    <a class="button secondary" href="/beta">Beta Guide</a>
                     <a class="button" href="/login">Demo Login</a>
                     <a class="button secondary" href="/performance-dashboard">View Analytics</a>
                     <a class="button secondary" href="/feedback">Give Feedback</a>
@@ -591,12 +593,476 @@ def home():
 
         <footer>
             <div>NOVAQ AI v{{APP_VERSION}}</div>
-            <div>Educational analytics only. Not financial advice. Beta feedback is welcome.</div>
+            <div>Educational analytics only. Not financial advice. New users can start with the Beta Guide.</div>
         </footer>
     </main>
 </body>
 </html>
     """.replace("{{APP_VERSION}}", APP_VERSION)
+
+
+@app.get("/beta", response_class=HTMLResponse)
+def beta_onboarding():
+    return """
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>NOVAQ AI Beta Guide</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #050810;
+            --panel: rgba(14, 24, 42, 0.9);
+            --panel-strong: rgba(17, 31, 55, 0.96);
+            --line: rgba(255, 255, 255, 0.1);
+            --line-bright: rgba(0, 255, 194, 0.24);
+            --text: #f4f8ff;
+            --muted: #91a0b8;
+            --soft: #c9d5e8;
+            --cyan: #00ffc2;
+            --blue: #4b8dff;
+            --amber: #ffd166;
+        }
+
+        html {
+            min-height: 100%;
+            background: var(--bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--text);
+            background:
+                linear-gradient(145deg, rgba(0, 255, 194, 0.11), transparent 34%),
+                linear-gradient(215deg, rgba(75, 141, 255, 0.14), transparent 36%),
+                linear-gradient(180deg, #050810 0%, #09111f 52%, #050810 100%);
+        }
+
+        .page {
+            width: min(1180px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 30px 0 42px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 56px;
+        }
+
+        .brand-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 22px;
+            font-weight: 950;
+            letter-spacing: 0;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line-bright);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(0, 255, 194, 0.18), rgba(75, 141, 255, 0.18));
+            color: var(--cyan);
+            font-size: 15px;
+        }
+
+        .badge {
+            border: 1px solid rgba(0, 255, 194, 0.28);
+            border-radius: 8px;
+            padding: 8px 10px;
+            color: var(--cyan);
+            background: rgba(0, 255, 194, 0.08);
+            font-size: 12px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .nav a,
+        .cta a {
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 950;
+        }
+
+        .nav a.secondary,
+        .cta a.secondary {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.055);
+            border: 1px solid var(--line);
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+            gap: 22px;
+            align-items: stretch;
+            margin-bottom: 28px;
+        }
+
+        h1 {
+            max-width: 780px;
+            margin: 0;
+            font-size: clamp(42px, 7vw, 76px);
+            line-height: 0.96;
+            letter-spacing: 0;
+            font-weight: 950;
+        }
+
+        .subtitle {
+            max-width: 760px;
+            margin: 20px 0 0;
+            color: var(--soft);
+            font-size: 18px;
+            line-height: 1.65;
+        }
+
+        .disclaimer-box {
+            align-self: end;
+            border: 1px solid var(--line-bright);
+            border-radius: 8px;
+            padding: 18px;
+            background: rgba(0, 255, 194, 0.07);
+            color: var(--soft);
+            line-height: 1.55;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-top: 22px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 22px;
+            background: var(--panel);
+        }
+
+        .section h2 {
+            margin: 0;
+            font-size: 26px;
+            line-height: 1.15;
+            letter-spacing: 0;
+        }
+
+        .section > p {
+            margin: 14px 0 0;
+            color: var(--soft);
+            line-height: 1.65;
+        }
+
+        .steps,
+        .decision-grid,
+        .feedback-grid,
+        .limits-grid {
+            display: grid;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .steps {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+
+        .decision-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .feedback-grid,
+        .limits-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .card {
+            min-height: 128px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .step-number {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+            font-weight: 950;
+        }
+
+        .card h3 {
+            margin: 0;
+            color: var(--text);
+            font-size: 16px;
+            line-height: 1.25;
+            letter-spacing: 0;
+        }
+
+        .card p {
+            margin: 10px 0 0;
+            color: var(--muted);
+            line-height: 1.5;
+            font-size: 13px;
+        }
+
+        .decision-card {
+            min-height: 150px;
+        }
+
+        .field-name {
+            display: block;
+            color: var(--cyan);
+            font-size: 12px;
+            font-weight: 950;
+            text-transform: uppercase;
+        }
+
+        .cta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid var(--line);
+            color: #738197;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 1040px) {
+            .steps,
+            .decision-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .feedback-grid,
+            .limits-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 760px) {
+            .page {
+                width: min(100% - 24px, 1180px);
+                padding-top: 22px;
+            }
+
+            .topbar,
+            footer {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .nav {
+                justify-content: flex-start;
+            }
+
+            .hero,
+            .steps,
+            .decision-grid,
+            .feedback-grid,
+            .limits-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 42px;
+            }
+
+            .cta a,
+            .nav a {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <header class="topbar">
+            <div class="brand-wrap">
+                <div class="brand" aria-label="NOVAQ AI">
+                    <span class="brand-mark">NQ</span>
+                    <span>NOVAQ AI</span>
+                </div>
+                <span class="badge">BETA GUIDE</span>
+            </div>
+            <nav class="nav" aria-label="Beta guide navigation">
+                <a href="/">Home</a>
+                <a href="/feed-dashboard">Decision Feed</a>
+                <a class="secondary" href="/feedback">Feedback</a>
+                <a class="secondary" href="/docs">API Docs</a>
+            </nav>
+        </header>
+
+        <section class="hero">
+            <div>
+                <h1>Start Testing NOVAQ AI</h1>
+                <p class="subtitle">A simple guide for beta users: understand what the platform shows, how to read decisions, and how to send useful feedback.</p>
+            </div>
+            <aside class="disclaimer-box">
+                Educational analytics only. Not financial advice. NOVAQ AI does not execute trades and does not access user funds.
+            </aside>
+        </section>
+
+        <section class="section">
+            <h2>What is NOVAQ AI?</h2>
+            <p>NOVAQ AI is an AI Decision Intelligence Layer for crypto markets. It does not trade for you. It analyzes live market data, market state, signal quality and risk, then explains the current decision in simple terms.</p>
+        </section>
+
+        <section class="section">
+            <h2>How to test it</h2>
+            <div class="steps">
+                <article class="card">
+                    <div class="step-number">1</div>
+                    <h3>Open Decision Feed</h3>
+                    <p>Go to /feed-dashboard and review the current market decisions.</p>
+                </article>
+                <article class="card">
+                    <div class="step-number">2</div>
+                    <h3>Pick 2-3 assets</h3>
+                    <p>Compare BTCUSDT, ETHUSDT, SOLUSDT or other symbols.</p>
+                </article>
+                <article class="card">
+                    <div class="step-number">3</div>
+                    <h3>Read the score</h3>
+                    <p>Look at action, confidence, opportunity score, risk level and reasoning.</p>
+                </article>
+                <article class="card">
+                    <div class="step-number">4</div>
+                    <h3>Do not trade blindly</h3>
+                    <p>Treat it as research, not financial advice.</p>
+                </article>
+                <article class="card">
+                    <div class="step-number">5</div>
+                    <h3>Send feedback</h3>
+                    <p>Tell what was clear, confusing, missing or valuable.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>How to read a decision</h2>
+            <div class="decision-grid">
+                <article class="card decision-card">
+                    <span class="field-name">Action</span>
+                    <p>BUY / SELL / HOLD / WAIT. What the system thinks is most reasonable right now.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Confidence</span>
+                    <p>How strong the system thinks the decision is, from 0 to 100%.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Opportunity Score</span>
+                    <p>A ranking score from 0 to 100 for comparing assets.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Risk Level</span>
+                    <p>LOW / MEDIUM / HIGH / EXTREME. If risk is too high, the system should prefer WAIT.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Market State</span>
+                    <p>Trend, sideways, high volatility, low liquidity or mixed conditions.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Reasoning</span>
+                    <p>Simple explanation of why the decision was produced.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Failure Scenario</span>
+                    <p>What could go wrong.</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">Safer Alternative</span>
+                    <p>A more conservative option.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>What feedback we need</h2>
+            <div class="feedback-grid">
+                <article class="card"><h3>Understandability</h3><p>Was the platform easy to understand?</p></article>
+                <article class="card"><h3>Trust</h3><p>Did the decision cards look trustworthy?</p></article>
+                <article class="card"><h3>Confusion</h3><p>Which field was confusing?</p></article>
+                <article class="card"><h3>Workflow Value</h3><p>Would this help you before entering a trade?</p></article>
+                <article class="card"><h3>Missing Feature</h3><p>What feature is missing?</p></article>
+                <article class="card"><h3>Pricing Signal</h3><p>Would you pay for this if accuracy improves?</p></article>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Beta limitations</h2>
+            <div class="limits-grid">
+                <article class="card"><h3>Educational Only</h3><p>Signals are educational only.</p></article>
+                <article class="card"><h3>No Execution</h3><p>No real trade execution.</p></article>
+                <article class="card"><h3>No Funds Access</h3><p>No access to user funds.</p></article>
+                <article class="card"><h3>Data Availability</h3><p>Market data providers may be delayed or unavailable.</p></article>
+                <article class="card"><h3>Sample Size</h3><p>Performance data needs a larger sample size.</p></article>
+                <article class="card"><h3>Fast Iteration</h3><p>Beta version can change quickly.</p></article>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Start testing</h2>
+            <div class="cta">
+                <a href="/feed-dashboard">Open Decision Feed</a>
+                <a href="/feedback">Send Feedback</a>
+                <a class="secondary" href="/login">Demo Login</a>
+                <a class="secondary" href="/docs">View API Docs</a>
+            </div>
+        </section>
+
+        <footer>
+            <div>NOVAQ AI Beta Guide</div>
+            <div>Educational analytics only. Not financial advice.</div>
+        </footer>
+    </main>
+</body>
+</html>
+    """
 
 
 @app.get("/login", response_class=HTMLResponse)

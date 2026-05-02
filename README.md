@@ -100,6 +100,14 @@ python start.py
   - `/api/feedback-summary`
   - `/api/feedback`
 
+## Beta Guide
+
+Public beta onboarding page:
+
+- `/beta`
+
+It explains how to test the product, how to read decisions, and how to send useful feedback.
+
 ## Storage
 
 NOVAQ AI supports two storage modes:

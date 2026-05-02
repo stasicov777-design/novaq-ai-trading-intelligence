@@ -9,6 +9,7 @@ PUBLIC_ENDPOINTS = [
     "/",
     "/api",
     "/health",
+    "/beta",
     "/feedback",
     "/decision/BTCUSDT",
     "/feed?symbols=BTCUSDT,ETHUSDT",
