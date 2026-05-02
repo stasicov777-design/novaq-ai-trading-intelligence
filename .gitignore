@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.db
+data/*.db-journal
+*.log
+uvicorn_stdout.log
+uvicorn_stderr.log
+.DS_Store
+.vscode/
+.idea/
