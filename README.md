@@ -100,6 +100,15 @@ python start.py
   - `/api/feedback-summary`
   - `/api/feedback`
 
+## Storage
+
+NOVAQ AI supports two storage modes:
+
+- SQLite fallback for local MVP development
+- PostgreSQL for production when `DATABASE_URL` is set
+
+Tracking and feedback data use PostgreSQL automatically if `DATABASE_URL` starts with `postgres://` or `postgresql://`.
+
 ## Deployment Notes
 
 SQLite is OK for a local MVP. For production with many users, move to PostgreSQL.

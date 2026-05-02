@@ -25,6 +25,20 @@ ACCESS_CODE=<your-secret-access-code>
 
 Without `ACCESS_CODE`, the app uses the default demo code. For public deployment, always set a custom `ACCESS_CODE` in Render.
 
+## PostgreSQL on Render
+
+1. Create a managed PostgreSQL database.
+2. Copy the Internal Database URL or External Database URL.
+3. Add it to the web service Environment Variables as:
+   `DATABASE_URL=<your-postgres-url>`
+4. Redeploy the service.
+5. The app will auto-create required tables:
+   `tracked_signals`
+   `feedback_entries`
+
+Note:
+Without `DATABASE_URL`, the app uses SQLite fallback. SQLite is acceptable for demo, but PostgreSQL is recommended for real beta users.
+
 ## Docker
 
 ```bash

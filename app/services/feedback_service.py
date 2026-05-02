@@ -1,9 +1,13 @@
-import os
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
+
+from app.services.db import get_postgres_connection, get_storage_backend
 
 
-FEEDBACK_DB_PATH = os.path.join("data", "novaq_feedback.db")
+BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_DIR = BASE_DIR / "data"
+FEEDBACK_DB_PATH = DATA_DIR / "novaq_feedback.db"
 
 FEEDBACK_FIELDS = [
     "name",
@@ -22,16 +26,37 @@ FEEDBACK_FIELDS = [
 ]
 
 
-def get_connection() -> sqlite3.Connection:
+def is_postgres() -> bool:
+    return get_storage_backend() == "postgres"
+
+
+def placeholder() -> str:
+    return "%s" if is_postgres() else "?"
+
+
+def get_connection():
+    init_feedback_db()
+
+    if is_postgres():
+        return get_postgres_connection()
+
     connection = sqlite3.connect(FEEDBACK_DB_PATH)
     connection.row_factory = sqlite3.Row
     return connection
 
 
 def init_feedback_db() -> None:
-    os.makedirs("data", exist_ok=True)
+    if is_postgres():
+        init_feedback_postgres()
+        return
 
-    with get_connection() as connection:
+    init_feedback_sqlite()
+
+
+def init_feedback_sqlite() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(FEEDBACK_DB_PATH) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS feedback_entries (
@@ -55,7 +80,35 @@ def init_feedback_db() -> None:
         )
 
 
-def row_to_dict(row: sqlite3.Row) -> dict:
+def init_feedback_postgres() -> None:
+    with get_postgres_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS feedback_entries (
+                id SERIAL PRIMARY KEY,
+                created_at_utc TEXT NOT NULL,
+                name TEXT,
+                contact TEXT,
+                experience_level TEXT,
+                main_use_case TEXT,
+                clarity_rating INTEGER,
+                trust_rating INTEGER,
+                would_pay TEXT,
+                price_preference TEXT,
+                liked TEXT,
+                confusing TEXT,
+                missing_features TEXT,
+                general_feedback TEXT,
+                user_agent TEXT
+            )
+            """
+        )
+
+
+def row_to_dict(row) -> dict:
+    if row is None:
+        return {}
+
     return dict(row)
 
 
@@ -67,46 +120,55 @@ def normalize_int(value: object) -> int:
 
 
 def create_feedback_entry(data: dict) -> dict:
-    init_feedback_db()
-
     payload = {field: data.get(field, "") for field in FEEDBACK_FIELDS}
     payload["clarity_rating"] = normalize_int(payload.get("clarity_rating"))
     payload["trust_rating"] = normalize_int(payload.get("trust_rating"))
     payload["created_at_utc"] = datetime.now(timezone.utc).isoformat()
 
     columns = ["created_at_utc", *FEEDBACK_FIELDS]
-    placeholders = ", ".join(["?"] * len(columns))
+    placeholders = ", ".join([placeholder()] * len(columns))
 
     with get_connection() as connection:
-        cursor = connection.execute(
-            f"""
-            INSERT INTO feedback_entries ({", ".join(columns)})
-            VALUES ({placeholders})
-            """,
-            [payload.get(column) for column in columns],
-        )
-        entry_id = cursor.lastrowid
-        row = connection.execute(
-            "SELECT * FROM feedback_entries WHERE id = ?",
-            (entry_id,),
-        ).fetchone()
+        if is_postgres():
+            row = connection.execute(
+                f"""
+                INSERT INTO feedback_entries ({", ".join(columns)})
+                VALUES ({placeholders})
+                RETURNING *
+                """,
+                [payload.get(column) for column in columns],
+            ).fetchone()
+        else:
+            cursor = connection.execute(
+                f"""
+                INSERT INTO feedback_entries ({", ".join(columns)})
+                VALUES ({placeholders})
+                """,
+                [payload.get(column) for column in columns],
+            )
+            entry_id = cursor.lastrowid
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM feedback_entries WHERE id = ?",
+                (entry_id,),
+            ).fetchone()
 
     return row_to_dict(row)
 
 
 def list_feedback_entries(limit: int = 100) -> dict:
-    init_feedback_db()
     safe_limit = max(1, min(int(limit or 100), 500))
+    marker = placeholder()
 
     with get_connection() as connection:
         total = connection.execute(
             "SELECT COUNT(*) AS total FROM feedback_entries"
         ).fetchone()["total"]
         rows = connection.execute(
-            """
+            f"""
             SELECT * FROM feedback_entries
             ORDER BY id DESC
-            LIMIT ?
+            LIMIT {marker}
             """,
             (safe_limit,),
         ).fetchall()
@@ -118,8 +180,6 @@ def list_feedback_entries(limit: int = 100) -> dict:
 
 
 def get_feedback_summary() -> dict:
-    init_feedback_db()
-
     with get_connection() as connection:
         summary = connection.execute(
             """
@@ -146,8 +206,8 @@ def get_feedback_summary() -> dict:
 
     return {
         "total": summary["total"] or 0,
-        "average_clarity_rating": round(summary["average_clarity_rating"] or 0, 2),
-        "average_trust_rating": round(summary["average_trust_rating"] or 0, 2),
+        "average_clarity_rating": round(float(summary["average_clarity_rating"] or 0), 2),
+        "average_trust_rating": round(float(summary["average_trust_rating"] or 0), 2),
         "would_pay_yes": summary["would_pay_yes"] or 0,
         "would_pay_no": summary["would_pay_no"] or 0,
         "would_pay_maybe": summary["would_pay_maybe"] or 0,

@@ -37,6 +37,17 @@ def main() -> int:
         if response.status_code != 200:
             print(f"ERROR {endpoint}: status {response.status_code}")
             failed = True
+            continue
+
+        if endpoint == "/api":
+            try:
+                data = response.json()
+            except ValueError:
+                print("ERROR /api: invalid JSON")
+                failed = True
+                continue
+
+            print(f"Storage backend: {data.get('storage_backend', 'unknown')}")
 
     for endpoint in ["/login"]:
         url = f"{BASE_URL}{endpoint}"

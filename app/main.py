@@ -15,6 +15,7 @@ from app.services.access_control import (
 )
 from app.services.candle_data import fetch_candles
 from app.services.decision_engine import build_decision
+from app.services.db import get_storage_backend
 from app.services.feed_engine import build_decision_feed
 from app.services.feedback_service import (
     create_feedback_entry,
@@ -73,6 +74,7 @@ def api_root():
         "docs": "/docs",
         "health": "/health",
         "access_control": "enabled" if is_access_enabled() else "disabled",
+        "storage_backend": get_storage_backend(),
         "time_utc": datetime.now(timezone.utc).isoformat()
     }
 

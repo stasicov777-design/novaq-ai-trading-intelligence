@@ -5,6 +5,7 @@ import sqlite3
 
 from fastapi import HTTPException
 
+from app.services.db import get_postgres_connection, get_storage_backend
 from app.services.decision_engine import build_decision
 from app.services.market_data import fetch_market_data
 
@@ -17,12 +18,31 @@ DB_PATH = DATA_DIR / "novaq_signals.db"
 TRACKING_MIGRATIONS = {
     "close_reason": "TEXT",
     "age_minutes": "REAL",
-    "evaluation_json": "TEXT"
+    "evaluation_json": "TEXT",
 }
 
 
-def get_connection() -> sqlite3.Connection:
+POSTGRES_TRACKING_MIGRATIONS = {
+    "close_reason": "TEXT",
+    "age_minutes": "DOUBLE PRECISION",
+    "evaluation_json": "TEXT",
+}
+
+
+def is_postgres() -> bool:
+    return get_storage_backend() == "postgres"
+
+
+def placeholder() -> str:
+    return "%s" if is_postgres() else "?"
+
+
+def get_connection():
     init_tracking_db()
+
+    if is_postgres():
+        return get_postgres_connection()
+
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     return connection
@@ -36,6 +56,14 @@ def row_to_dict(row) -> dict:
 
 
 def init_tracking_db() -> None:
+    if is_postgres():
+        init_tracking_postgres()
+        return
+
+    init_tracking_sqlite()
+
+
+def init_tracking_sqlite() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(DB_PATH) as connection:
@@ -77,6 +105,43 @@ def init_tracking_db() -> None:
                 )
 
         connection.commit()
+
+
+def init_tracking_postgres() -> None:
+    with get_postgres_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tracked_signals (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT,
+                action TEXT,
+                entry_price DOUBLE PRECISION,
+                exit_price DOUBLE PRECISION,
+                entry_time_utc TEXT,
+                exit_time_utc TEXT,
+                status TEXT,
+                confidence INTEGER,
+                expected_return TEXT,
+                risk_level TEXT,
+                time_horizon TEXT,
+                position_size TEXT,
+                tier INTEGER,
+                opportunity_score INTEGER,
+                quality_label TEXT,
+                return_percent DOUBLE PRECISION,
+                outcome TEXT,
+                decision_json TEXT,
+                close_reason TEXT,
+                age_minutes DOUBLE PRECISION,
+                evaluation_json TEXT
+            )
+            """
+        )
+
+        for column_name, column_type in POSTGRES_TRACKING_MIGRATIONS.items():
+            connection.execute(
+                f"ALTER TABLE tracked_signals ADD COLUMN IF NOT EXISTS {column_name} {column_type}"
+            )
 
 
 def calculate_paper_return(
@@ -134,59 +199,78 @@ def track_signal(symbol: str) -> dict:
     decision_json = json.dumps(decision, ensure_ascii=True)
     tracked_symbol = decision.get("symbol") or symbol.upper()
 
-    with get_connection() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO tracked_signals (
-                symbol,
-                action,
-                confidence,
-                opportunity_score,
-                quality_label,
-                expected_return,
-                risk_level,
-                tier,
-                entry_price,
-                entry_time_utc,
-                time_horizon,
-                position_size,
-                status,
-                decision_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                tracked_symbol,
-                decision.get("action"),
-                decision.get("confidence"),
-                decision.get("opportunity_score"),
-                decision.get("quality_label"),
-                decision.get("expected_return"),
-                decision.get("risk_level"),
-                decision.get("tier"),
-                float(entry_price),
-                entry_time_utc,
-                decision.get("time_horizon"),
-                decision.get("position_size"),
-                "OPEN",
-                decision_json
-            )
-        )
-        signal_id = cursor.lastrowid
-        connection.commit()
+    columns = [
+        "symbol",
+        "action",
+        "confidence",
+        "opportunity_score",
+        "quality_label",
+        "expected_return",
+        "risk_level",
+        "tier",
+        "entry_price",
+        "entry_time_utc",
+        "time_horizon",
+        "position_size",
+        "status",
+        "decision_json",
+    ]
+    values = [
+        tracked_symbol,
+        decision.get("action"),
+        decision.get("confidence"),
+        decision.get("opportunity_score"),
+        decision.get("quality_label"),
+        decision.get("expected_return"),
+        decision.get("risk_level"),
+        decision.get("tier"),
+        float(entry_price),
+        entry_time_utc,
+        decision.get("time_horizon"),
+        decision.get("position_size"),
+        "OPEN",
+        decision_json,
+    ]
+    placeholders = ", ".join([placeholder()] * len(columns))
 
-        row = connection.execute(
-            "SELECT * FROM tracked_signals WHERE id = ?",
-            (signal_id,)
-        ).fetchone()
+    with get_connection() as connection:
+        if is_postgres():
+            row = connection.execute(
+                f"""
+                INSERT INTO tracked_signals ({", ".join(columns)})
+                VALUES ({placeholders})
+                RETURNING *
+                """,
+                values,
+            ).fetchone()
+        else:
+            cursor = connection.execute(
+                f"""
+                INSERT INTO tracked_signals ({", ".join(columns)})
+                VALUES ({placeholders})
+                """,
+                values,
+            )
+            signal_id = cursor.lastrowid
+            connection.commit()
+
+            row = connection.execute(
+                "SELECT * FROM tracked_signals WHERE id = ?",
+                (signal_id,),
+            ).fetchone()
 
     return row_to_dict(row)
+
+
+def create_tracked_signal(symbol: str) -> dict:
+    return track_signal(symbol)
 
 
 def list_tracked_signals(status: str | None = None, limit: int = 50) -> dict:
     safe_limit = max(1, min(int(limit), 500))
     query = "SELECT * FROM tracked_signals"
     params = []
+    marker = placeholder()
 
     if status:
         clean_status = status.strip().upper()
@@ -195,10 +279,10 @@ def list_tracked_signals(status: str | None = None, limit: int = 50) -> dict:
                 status_code=400,
                 detail="Status must be OPEN or CLOSED."
             )
-        query += " WHERE status = ?"
+        query += f" WHERE status = {marker}"
         params.append(clean_status)
 
-    query += " ORDER BY id DESC LIMIT ?"
+    query += f" ORDER BY id DESC LIMIT {marker}"
     params.append(safe_limit)
 
     with get_connection() as connection:
@@ -208,15 +292,17 @@ def list_tracked_signals(status: str | None = None, limit: int = 50) -> dict:
 
     return {
         "total": len(signals),
-        "signals": signals
+        "signals": signals,
     }
 
 
 def close_signal(signal_id: int, close_reason: str = "MANUAL_CLOSE") -> dict:
+    marker = placeholder()
+
     with get_connection() as connection:
         row = connection.execute(
-            "SELECT * FROM tracked_signals WHERE id = ?",
-            (signal_id,)
+            f"SELECT * FROM tracked_signals WHERE id = {marker}",
+            (signal_id,),
         ).fetchone()
 
         if row is None:
@@ -244,8 +330,8 @@ def close_signal(signal_id: int, close_reason: str = "MANUAL_CLOSE") -> dict:
             )
 
         return_percent = round(
-            calculate_paper_return(signal.get("action"), entry_price, exit_price),
-            4
+            calculate_paper_return(signal.get("action"), float(entry_price), float(exit_price)),
+            4,
         )
         outcome = calculate_outcome(return_percent)
         now_utc = datetime.now(timezone.utc)
@@ -253,17 +339,17 @@ def close_signal(signal_id: int, close_reason: str = "MANUAL_CLOSE") -> dict:
         age_minutes = calculate_age_minutes(signal.get("entry_time_utc"), now_utc)
 
         connection.execute(
-            """
+            f"""
             UPDATE tracked_signals
             SET
-                status = ?,
-                exit_price = ?,
-                exit_time_utc = ?,
-                return_percent = ?,
-                outcome = ?,
-                close_reason = ?,
-                age_minutes = ?
-            WHERE id = ?
+                status = {marker},
+                exit_price = {marker},
+                exit_time_utc = {marker},
+                return_percent = {marker},
+                outcome = {marker},
+                close_reason = {marker},
+                age_minutes = {marker}
+            WHERE id = {marker}
             """,
             (
                 "CLOSED",
@@ -273,14 +359,15 @@ def close_signal(signal_id: int, close_reason: str = "MANUAL_CLOSE") -> dict:
                 outcome,
                 close_reason,
                 age_minutes,
-                signal_id
-            )
+                signal_id,
+            ),
         )
-        connection.commit()
+        if not is_postgres():
+            connection.commit()
 
         updated_row = connection.execute(
-            "SELECT * FROM tracked_signals WHERE id = ?",
-            (signal_id,)
+            f"SELECT * FROM tracked_signals WHERE id = {marker}",
+            (signal_id,),
         ).fetchone()
 
     return row_to_dict(updated_row)
@@ -294,16 +381,17 @@ def evaluate_open_signals(
 ) -> dict:
     safe_limit = max(1, min(int(limit), 500))
     now_utc = datetime.now(timezone.utc)
+    marker = placeholder()
 
     with get_connection() as connection:
         rows = connection.execute(
-            """
+            f"""
             SELECT * FROM tracked_signals
-            WHERE status = ?
+            WHERE status = {marker}
             ORDER BY id ASC
-            LIMIT ?
+            LIMIT {marker}
             """,
-            ("OPEN", safe_limit)
+            ("OPEN", safe_limit),
         ).fetchall()
 
     results = []
@@ -330,13 +418,13 @@ def evaluate_open_signals(
                 calculate_paper_return(
                     signal.get("action"),
                     float(entry_price),
-                    float(current_price)
+                    float(current_price),
                 ),
-                4
+                4,
             )
             age_minutes = calculate_age_minutes(
                 signal.get("entry_time_utc"),
-                now_utc
+                now_utc,
             )
 
             close_reason = None
@@ -355,25 +443,25 @@ def evaluate_open_signals(
                         "take_profit_percent": take_profit_percent,
                         "stop_loss_percent": stop_loss_percent,
                         "max_age_minutes": max_age_minutes,
-                        "current_return_percent": current_return_percent
+                        "current_return_percent": current_return_percent,
                     },
-                    ensure_ascii=True
+                    ensure_ascii=True,
                 )
 
                 with get_connection() as connection:
                     connection.execute(
-                        """
+                        f"""
                         UPDATE tracked_signals
                         SET
-                            status = ?,
-                            exit_price = ?,
-                            exit_time_utc = ?,
-                            return_percent = ?,
-                            outcome = ?,
-                            close_reason = ?,
-                            age_minutes = ?,
-                            evaluation_json = ?
-                        WHERE id = ?
+                            status = {marker},
+                            exit_price = {marker},
+                            exit_time_utc = {marker},
+                            return_percent = {marker},
+                            outcome = {marker},
+                            close_reason = {marker},
+                            age_minutes = {marker},
+                            evaluation_json = {marker}
+                        WHERE id = {marker}
                         """,
                         (
                             "CLOSED",
@@ -384,13 +472,15 @@ def evaluate_open_signals(
                             close_reason,
                             age_minutes,
                             evaluation_json,
-                            signal_id
-                        )
+                            signal_id,
+                        ),
                     )
-                    connection.commit()
+                    if not is_postgres():
+                        connection.commit()
+
                     updated_row = connection.execute(
-                        "SELECT * FROM tracked_signals WHERE id = ?",
-                        (signal_id,)
+                        f"SELECT * FROM tracked_signals WHERE id = {marker}",
+                        (signal_id,),
                     ).fetchone()
 
                 result = row_to_dict(updated_row)
@@ -407,7 +497,7 @@ def evaluate_open_signals(
                         "current_price": float(current_price),
                         "current_return_percent": current_return_percent,
                         "age_minutes": age_minutes,
-                        "close_reason": None
+                        "close_reason": None,
                     }
                 )
                 still_open_count += 1
@@ -418,7 +508,7 @@ def evaluate_open_signals(
                     "id": signal_id,
                     "symbol": symbol,
                     "status": "ERROR",
-                    "error": str(error)
+                    "error": str(error),
                 }
             )
             error_count += 1
@@ -432,9 +522,9 @@ def evaluate_open_signals(
             "take_profit_percent": take_profit_percent,
             "stop_loss_percent": stop_loss_percent,
             "max_age_minutes": max_age_minutes,
-            "limit": limit
+            "limit": limit,
         },
-        "results": results
+        "results": results,
     }
 
 
@@ -481,9 +571,9 @@ def get_tracking_summary() -> dict:
 
     if closed_count:
         winrate_percent = round((wins / closed_count) * 100, 2)
-        average_return_percent = round(returns["average_return_percent"] or 0, 4)
-        best_return_percent = round(returns["best_return_percent"] or 0, 4)
-        worst_return_percent = round(returns["worst_return_percent"] or 0, 4)
+        average_return_percent = round(float(returns["average_return_percent"] or 0), 4)
+        best_return_percent = round(float(returns["best_return_percent"] or 0), 4)
+        worst_return_percent = round(float(returns["worst_return_percent"] or 0), 4)
     else:
         winrate_percent = 0
         average_return_percent = 0
@@ -504,5 +594,5 @@ def get_tracking_summary() -> dict:
         "take_profit_closed": take_profit_closed,
         "stop_loss_closed": stop_loss_closed,
         "max_age_closed": max_age_closed,
-        "manual_closed": manual_closed
+        "manual_closed": manual_closed,
     }
