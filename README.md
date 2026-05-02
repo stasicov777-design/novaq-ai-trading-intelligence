@@ -57,6 +57,7 @@ python start.py
 
 ## Main Dashboards
 
+- `/` public landing page
 - `/dashboard`
 - `/feed-dashboard`
 - `/tracking-dashboard`
@@ -65,6 +66,7 @@ python start.py
 
 ## Main API Endpoints
 
+- `GET /api` - service metadata JSON
 - `GET /health`
 - `GET /market/{symbol}`
 - `GET /market-state/{symbol}`

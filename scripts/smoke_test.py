@@ -5,6 +5,8 @@ import requests
 
 BASE_URL = "http://127.0.0.1:8000"
 ENDPOINTS = [
+    "/",
+    "/api",
     "/health",
     "/decision/BTCUSDT",
     "/feed?symbols=BTCUSDT,ETHUSDT",

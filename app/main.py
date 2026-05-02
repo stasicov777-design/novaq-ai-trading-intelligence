@@ -32,25 +32,545 @@ def startup_event():
     init_tracking_db()
 
 
-@app.get("/")
-def root():
+@app.get("/api")
+def api_root():
     return {
         "product": "NOVAQ AI",
         "version": APP_VERSION,
         "status": "online",
         "message": "AI Decision Intelligence Layer is running",
-        "dashboard": "http://127.0.0.1:8000/dashboard",
-        "feed": "http://127.0.0.1:8000/feed",
-        "feed_dashboard": "http://127.0.0.1:8000/feed-dashboard",
-        "tracking_summary": "http://127.0.0.1:8000/tracking-summary",
-        "tracked_signals": "http://127.0.0.1:8000/tracked-signals",
-        "tracking_dashboard": "http://127.0.0.1:8000/tracking-dashboard",
-        "evaluate_open_signals": "http://127.0.0.1:8000/evaluate-open-signals",
-        "performance_analytics": "http://127.0.0.1:8000/performance-analytics",
-        "performance_dashboard": "http://127.0.0.1:8000/performance-dashboard",
-        "docs": "http://127.0.0.1:8000/docs",
+        "dashboard": "/dashboard",
+        "feed": "/feed",
+        "feed_dashboard": "/feed-dashboard",
+        "tracking_summary": "/tracking-summary",
+        "tracked_signals": "/tracked-signals",
+        "tracking_dashboard": "/tracking-dashboard",
+        "evaluate_open_signals": "/evaluate-open-signals",
+        "performance_analytics": "/performance-analytics",
+        "performance_dashboard": "/performance-dashboard",
+        "docs": "/docs",
+        "health": "/health",
         "time_utc": datetime.now(timezone.utc).isoformat()
     }
+
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return """
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>NOVAQ AI Trading Intelligence</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #050810;
+            --bg-soft: #09111f;
+            --panel: rgba(14, 24, 42, 0.86);
+            --panel-strong: rgba(17, 31, 55, 0.96);
+            --line: rgba(255, 255, 255, 0.1);
+            --line-bright: rgba(0, 255, 194, 0.24);
+            --text: #f4f8ff;
+            --muted: #91a0b8;
+            --soft: #c9d5e8;
+            --cyan: #00ffc2;
+            --blue: #4b8dff;
+            --deep-blue: #193c80;
+        }
+
+        html {
+            min-height: 100%;
+            background: var(--bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--text);
+            background:
+                linear-gradient(145deg, rgba(0, 255, 194, 0.11) 0%, transparent 31%),
+                linear-gradient(215deg, rgba(75, 141, 255, 0.14) 0%, transparent 34%),
+                linear-gradient(180deg, #050810 0%, #09111f 52%, #050810 100%);
+        }
+
+        a {
+            color: inherit;
+        }
+
+        .page {
+            width: min(1180px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 30px 0 34px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 64px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 22px;
+            font-weight: 950;
+            letter-spacing: 0;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line-bright);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(0, 255, 194, 0.18), rgba(75, 141, 255, 0.18));
+            color: var(--cyan);
+            font-size: 15px;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            min-height: 34px;
+            border: 1px solid var(--line-bright);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--cyan);
+            background: rgba(0, 255, 194, 0.07);
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+            gap: 26px;
+            align-items: center;
+            margin-bottom: 28px;
+        }
+
+        .hero-copy {
+            min-width: 0;
+        }
+
+        .eyebrow {
+            margin: 0 0 18px;
+            color: var(--cyan);
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            max-width: 780px;
+            margin: 0;
+            font-size: clamp(42px, 7vw, 76px);
+            line-height: 0.96;
+            letter-spacing: 0;
+            font-weight: 950;
+        }
+
+        .subtitle {
+            max-width: 740px;
+            margin: 22px 0 0;
+            color: var(--soft);
+            font-size: 18px;
+            line-height: 1.65;
+        }
+
+        .disclaimer {
+            max-width: 720px;
+            margin: 20px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 46px;
+            border-radius: 8px;
+            padding: 13px 16px;
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 950;
+            box-shadow: 0 14px 34px rgba(0, 255, 194, 0.12);
+        }
+
+        .button.secondary {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.055);
+            border: 1px solid var(--line);
+            box-shadow: none;
+        }
+
+        .button:hover {
+            filter: brightness(1.08);
+        }
+
+        .terminal {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(17, 31, 55, 0.94), rgba(9, 17, 31, 0.96));
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+            overflow: hidden;
+        }
+
+        .terminal-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            border-bottom: 1px solid var(--line);
+            padding: 14px 16px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .pulse {
+            color: var(--cyan);
+        }
+
+        .terminal-body {
+            display: grid;
+            gap: 12px;
+            padding: 16px;
+        }
+
+        .signal-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 14px;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 13px;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .signal-label {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .signal-value {
+            margin-top: 6px;
+            color: var(--text);
+            font-size: 18px;
+            font-weight: 950;
+        }
+
+        .chip {
+            border-radius: 8px;
+            padding: 7px 9px;
+            background: rgba(0, 255, 194, 0.1);
+            color: var(--cyan);
+            font-size: 12px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 28px;
+        }
+
+        .card {
+            min-height: 126px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 17px;
+            background: var(--panel);
+        }
+
+        .card h2,
+        .card h3 {
+            margin: 0;
+            font-size: 16px;
+            line-height: 1.25;
+            letter-spacing: 0;
+        }
+
+        .card p {
+            margin: 12px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .section {
+            margin-top: 36px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--panel-strong);
+            padding: 22px;
+        }
+
+        .section-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+
+        .section h2 {
+            margin: 0;
+            font-size: 26px;
+            letter-spacing: 0;
+        }
+
+        .section-note {
+            margin: 0;
+            max-width: 430px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: right;
+        }
+
+        .insight-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .insight {
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px 13px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--soft);
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid var(--line);
+            color: #738197;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 960px) {
+            .topbar {
+                margin-bottom: 40px;
+            }
+
+            .hero,
+            .grid,
+            .insight-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .hero-copy {
+                grid-column: 1 / -1;
+            }
+
+            .terminal {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 680px) {
+            .page {
+                width: min(100% - 24px, 1180px);
+                padding-top: 22px;
+            }
+
+            .topbar,
+            .section-head,
+            footer {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .hero,
+            .grid,
+            .insight-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 42px;
+            }
+
+            .subtitle {
+                font-size: 16px;
+            }
+
+            .button {
+                width: 100%;
+            }
+
+            .section {
+                padding: 16px;
+            }
+
+            .section-note {
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <header class="topbar">
+            <div class="brand" aria-label="NOVAQ AI">
+                <span class="brand-mark">NQ</span>
+                <span>NOVAQ AI</span>
+            </div>
+            <div class="status">SYSTEM ONLINE</div>
+        </header>
+
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">AI Decision Intelligence Layer</p>
+                <h1>Real-Time Crypto Decision Intelligence</h1>
+                <p class="subtitle">
+                    Understand what to do now across crypto markets with live data, market state, signal quality, risk logic, paper tracking, and performance analytics.
+                </p>
+                <p class="disclaimer">
+                    Educational analytics only. Not financial advice. NOVAQ AI does not execute trades and does not access user funds.
+                </p>
+                <div class="actions" aria-label="Primary navigation">
+                    <a class="button" href="/feed-dashboard">Open Decision Feed</a>
+                    <a class="button" href="/tracking-dashboard">Track Paper Signals</a>
+                    <a class="button secondary" href="/performance-dashboard">View Analytics</a>
+                    <a class="button secondary" href="/docs">API Docs</a>
+                </div>
+            </div>
+
+            <aside class="terminal" aria-label="Decision intelligence preview">
+                <div class="terminal-top">
+                    <span>NOVAQ MARKET STATE</span>
+                    <span class="pulse">LIVE</span>
+                </div>
+                <div class="terminal-body">
+                    <div class="signal-row">
+                        <div>
+                            <div class="signal-label">Action</div>
+                            <div class="signal-value">Risk-Filtered Signal</div>
+                        </div>
+                        <span class="chip">Decision Layer</span>
+                    </div>
+                    <div class="signal-row">
+                        <div>
+                            <div class="signal-label">Opportunity Score</div>
+                            <div class="signal-value">Ranked Market Setup</div>
+                        </div>
+                        <span class="chip">Quality Logic</span>
+                    </div>
+                    <div class="signal-row">
+                        <div>
+                            <div class="signal-label">Performance</div>
+                            <div class="signal-value">Paper Tracking Analytics</div>
+                        </div>
+                        <span class="chip">Evaluation</span>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <section class="grid" aria-label="NOVAQ AI features">
+            <article class="card">
+                <h2>Live Market Data</h2>
+                <p>Current crypto market inputs for decisions and dashboards.</p>
+            </article>
+            <article class="card">
+                <h2>Market State Engine</h2>
+                <p>Regime context for trend, risk, and trade readiness.</p>
+            </article>
+            <article class="card">
+                <h2>Signal Engine</h2>
+                <p>Structured signal quality across momentum and market inputs.</p>
+            </article>
+            <article class="card">
+                <h2>Opportunity Score</h2>
+                <p>Ranked setups for faster comparison across assets.</p>
+            </article>
+            <article class="card">
+                <h2>Paper Signal Tracking</h2>
+                <p>Track simulated decisions without touching user funds.</p>
+            </article>
+            <article class="card">
+                <h2>Auto Evaluation</h2>
+                <p>Evaluate open paper signals against outcome rules.</p>
+            </article>
+            <article class="card">
+                <h2>Performance Analytics</h2>
+                <p>Review closed signal behavior and decision quality.</p>
+            </article>
+            <article class="card">
+                <h2>Risk-First Decisions</h2>
+                <p>Show risk level, failure scenario, and safer alternatives.</p>
+            </article>
+        </section>
+
+        <section class="section" aria-labelledby="shows-title">
+            <div class="section-head">
+                <h2 id="shows-title">What NOVAQ AI shows</h2>
+                <p class="section-note">Decision outputs are built for clarity, comparison, and risk awareness.</p>
+            </div>
+            <div class="insight-grid">
+                <div class="insight">Action</div>
+                <div class="insight">Confidence</div>
+                <div class="insight">Opportunity Score</div>
+                <div class="insight">Risk Level</div>
+                <div class="insight">Market State</div>
+                <div class="insight">Reasoning</div>
+                <div class="insight">Failure Scenario</div>
+                <div class="insight">Safer Alternative</div>
+            </div>
+        </section>
+
+        <footer>
+            <div>NOVAQ AI v{{APP_VERSION}}</div>
+            <div>Educational analytics only. Not financial advice.</div>
+        </footer>
+    </main>
+</body>
+</html>
+    """.replace("{{APP_VERSION}}", APP_VERSION)
 
 
 @app.get("/health")
