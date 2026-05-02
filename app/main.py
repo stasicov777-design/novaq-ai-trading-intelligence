@@ -1,4 +1,5 @@
 ﻿from datetime import datetime, timezone
+from html import escape
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Form, Request
@@ -15,6 +16,12 @@ from app.services.access_control import (
 from app.services.candle_data import fetch_candles
 from app.services.decision_engine import build_decision
 from app.services.feed_engine import build_decision_feed
+from app.services.feedback_service import (
+    create_feedback_entry,
+    get_feedback_summary,
+    init_feedback_db,
+    list_feedback_entries,
+)
 from app.services.market_data import fetch_market_data
 from app.services.market_state import classify_market_state
 from app.services.performance_analytics import build_performance_analytics
@@ -39,6 +46,7 @@ app = FastAPI(
 @app.on_event("startup")
 def startup_event():
     init_tracking_db()
+    init_feedback_db()
 
 
 @app.get("/api")
@@ -57,6 +65,9 @@ def api_root():
         "evaluate_open_signals": "/evaluate-open-signals",
         "performance_analytics": "/performance-analytics",
         "performance_dashboard": "/performance-dashboard",
+        "feedback": "/feedback",
+        "feedback_summary": "/api/feedback-summary",
+        "admin_feedback": "/admin-feedback",
         "login": "/login",
         "logout": "/logout",
         "docs": "/docs",
@@ -488,6 +499,7 @@ def home():
                     <a class="button" href="/feed-dashboard">Open Decision Feed</a>
                     <a class="button" href="/login">Demo Login</a>
                     <a class="button secondary" href="/performance-dashboard">View Analytics</a>
+                    <a class="button secondary" href="/feedback">Give Feedback</a>
                     <a class="button secondary" href="/docs">API Docs</a>
                 </div>
             </div>
@@ -577,7 +589,7 @@ def home():
 
         <footer>
             <div>NOVAQ AI v{{APP_VERSION}}</div>
-            <div>Educational analytics only. Not financial advice.</div>
+            <div>Educational analytics only. Not financial advice. Beta feedback is welcome.</div>
         </footer>
     </main>
 </body>
@@ -801,6 +813,756 @@ def logout():
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie(ACCESS_COOKIE_NAME)
     return response
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+def feedback_page():
+    return """
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>NOVAQ AI Beta Feedback</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        :root {
+            --bg: #050810;
+            --panel: rgba(14, 24, 42, 0.9);
+            --panel-strong: rgba(17, 31, 55, 0.96);
+            --line: rgba(255, 255, 255, 0.1);
+            --line-bright: rgba(0, 255, 194, 0.24);
+            --text: #f4f8ff;
+            --muted: #91a0b8;
+            --soft: #c9d5e8;
+            --cyan: #00ffc2;
+            --blue: #4b8dff;
+        }
+
+        html {
+            min-height: 100%;
+            background: var(--bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--text);
+            background:
+                linear-gradient(145deg, rgba(0, 255, 194, 0.11), transparent 34%),
+                linear-gradient(215deg, rgba(75, 141, 255, 0.14), transparent 36%),
+                linear-gradient(180deg, #050810 0%, #09111f 52%, #050810 100%);
+        }
+
+        .page {
+            width: min(980px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 32px 0 42px;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 22px;
+            font-weight: 950;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line-bright);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(0, 255, 194, 0.18), rgba(75, 141, 255, 0.18));
+            color: var(--cyan);
+            font-size: 15px;
+        }
+
+        .nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .nav a,
+        button {
+            border: 0;
+            border-radius: 8px;
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 950;
+            text-decoration: none;
+        }
+
+        .nav a {
+            padding: 10px 12px;
+        }
+
+        .hero {
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            max-width: 760px;
+            margin: 0;
+            font-size: clamp(38px, 6vw, 60px);
+            line-height: 1;
+            letter-spacing: 0;
+        }
+
+        .subtitle {
+            max-width: 720px;
+            margin: 16px 0 0;
+            color: var(--soft);
+            font-size: 18px;
+            line-height: 1.6;
+        }
+
+        .disclaimer {
+            margin: 12px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 20px;
+            background: var(--panel);
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28);
+        }
+
+        form {
+            display: grid;
+            gap: 14px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        label {
+            display: grid;
+            gap: 8px;
+            color: var(--soft);
+            font-size: 13px;
+            font-weight: 850;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 13px 14px;
+            background: rgba(255, 255, 255, 0.055);
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+        }
+
+        select option {
+            color: #06101d;
+        }
+
+        textarea {
+            min-height: 108px;
+            resize: vertical;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: var(--line-bright);
+        }
+
+        .full {
+            grid-column: 1 / -1;
+        }
+
+        button {
+            width: fit-content;
+            min-height: 48px;
+            padding: 14px 18px;
+        }
+
+        @media (max-width: 760px) {
+            .page {
+                width: min(100% - 24px, 980px);
+                padding-top: 22px;
+            }
+
+            .topbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .nav {
+                justify-content: flex-start;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <header class="topbar">
+            <div class="brand" aria-label="NOVAQ AI">
+                <span class="brand-mark">NQ</span>
+                <span>NOVAQ AI</span>
+            </div>
+            <nav class="nav" aria-label="Feedback navigation">
+                <a href="/">Home</a>
+                <a href="/feed-dashboard">Decision Feed</a>
+                <a href="/docs">API Docs</a>
+            </nav>
+        </header>
+
+        <section class="hero">
+            <h1>NOVAQ AI Beta Feedback</h1>
+            <p class="subtitle">Help improve the AI Decision Intelligence Layer</p>
+            <p class="disclaimer">Educational analytics only. Not financial advice.</p>
+        </section>
+
+        <section class="panel">
+            <form method="post" action="/feedback">
+                <div class="grid">
+                    <label>
+                        Name
+                        <input type="text" name="name" autocomplete="name" />
+                    </label>
+                    <label>
+                        Contact
+                        <input type="text" name="contact" autocomplete="email" />
+                    </label>
+                    <label>
+                        Experience Level
+                        <select name="experience_level">
+                            <option value="">Select one</option>
+                            <option>Beginner</option>
+                            <option>Intermediate</option>
+                            <option>Advanced</option>
+                            <option>Professional</option>
+                        </select>
+                    </label>
+                    <label>
+                        Main Use Case
+                        <select name="main_use_case">
+                            <option value="">Select one</option>
+                            <option>Learn trading</option>
+                            <option>Check market decisions</option>
+                            <option>Validate signals</option>
+                            <option>Paper trading</option>
+                            <option>Analytics/research</option>
+                            <option>Other</option>
+                        </select>
+                    </label>
+                    <label>
+                        Clarity Rating
+                        <select name="clarity_rating">
+                            <option value="0">Select 1-5</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                        </select>
+                    </label>
+                    <label>
+                        Trust Rating
+                        <select name="trust_rating">
+                            <option value="0">Select 1-5</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                        </select>
+                    </label>
+                    <label>
+                        Would Pay
+                        <select name="would_pay">
+                            <option value="">Select one</option>
+                            <option value="yes">yes</option>
+                            <option value="no">no</option>
+                            <option value="maybe">maybe</option>
+                        </select>
+                    </label>
+                    <label>
+                        Price Preference
+                        <select name="price_preference">
+                            <option value="">Select one</option>
+                            <option>Free only</option>
+                            <option>$9/month</option>
+                            <option>$19/month</option>
+                            <option>$49/month</option>
+                            <option>$99/month</option>
+                            <option>B2B/API</option>
+                        </select>
+                    </label>
+                    <label class="full">
+                        What did you like?
+                        <textarea name="liked"></textarea>
+                    </label>
+                    <label class="full">
+                        What was confusing?
+                        <textarea name="confusing"></textarea>
+                    </label>
+                    <label class="full">
+                        Missing features
+                        <textarea name="missing_features"></textarea>
+                    </label>
+                    <label class="full">
+                        General feedback
+                        <textarea name="general_feedback"></textarea>
+                    </label>
+                </div>
+                <button type="submit">Send Feedback</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>
+    """
+
+
+@app.post("/feedback", response_class=HTMLResponse)
+async def submit_feedback(request: Request):
+    body = await request.body()
+    form_data = parse_qs(body.decode("utf-8"))
+
+    def form_value(name: str, default: str = "") -> str:
+        return form_data.get(name, [default])[0]
+
+    create_feedback_entry(
+        {
+            "name": form_value("name"),
+            "contact": form_value("contact"),
+            "experience_level": form_value("experience_level"),
+            "main_use_case": form_value("main_use_case"),
+            "clarity_rating": form_value("clarity_rating", "0"),
+            "trust_rating": form_value("trust_rating", "0"),
+            "would_pay": form_value("would_pay"),
+            "price_preference": form_value("price_preference"),
+            "liked": form_value("liked"),
+            "confusing": form_value("confusing"),
+            "missing_features": form_value("missing_features"),
+            "general_feedback": form_value("general_feedback"),
+            "user_agent": request.headers.get("user-agent", ""),
+        }
+    )
+
+    return """
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>Thank you</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #f4f8ff;
+            background:
+                linear-gradient(145deg, rgba(0, 255, 194, 0.12), transparent 34%),
+                linear-gradient(215deg, rgba(75, 141, 255, 0.15), transparent 36%),
+                linear-gradient(180deg, #050810 0%, #09111f 52%, #050810 100%);
+        }
+
+        .panel {
+            width: min(520px, 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 26px;
+            background: rgba(14, 24, 42, 0.92);
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 36px;
+            letter-spacing: 0;
+        }
+
+        p {
+            margin: 12px 0 22px;
+            color: #c9d5e8;
+            line-height: 1.6;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        a {
+            border-radius: 8px;
+            padding: 13px 16px;
+            color: #031018;
+            background: linear-gradient(135deg, #00ffc2, #4b8dff);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 950;
+        }
+
+        a.secondary {
+            color: #f4f8ff;
+            background: rgba(255, 255, 255, 0.055);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        @media (max-width: 520px) {
+            a {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="panel">
+        <h1>Thank you</h1>
+        <p>Your feedback helps improve NOVAQ AI.</p>
+        <div class="actions">
+            <a href="/feed-dashboard">Back to Decision Feed</a>
+            <a class="secondary" href="/">Home</a>
+        </div>
+    </main>
+</body>
+</html>
+    """
+
+
+@app.get("/admin-feedback", response_class=HTMLResponse)
+def admin_feedback(request: Request, limit: int = 100):
+    if not has_access(request):
+        return RedirectResponse(url="/login", status_code=303)
+
+    summary = get_feedback_summary()
+    feedback = list_feedback_entries(limit)
+
+    def safe(value: object) -> str:
+        if value is None:
+            return ""
+        return escape(str(value))
+
+    cards = []
+    for entry in feedback["entries"]:
+        cards.append(
+            f"""
+            <article class="entry-card">
+                <div class="entry-top">
+                    <div><span class="label">ID</span><strong>{safe(entry.get("id"))}</strong></div>
+                    <div><span class="label">Created UTC</span><strong>{safe(entry.get("created_at_utc"))}</strong></div>
+                </div>
+                <div class="meta-grid">
+                    <div><span class="label">Name</span><strong>{safe(entry.get("name"))}</strong></div>
+                    <div><span class="label">Contact</span><strong>{safe(entry.get("contact"))}</strong></div>
+                    <div><span class="label">Experience</span><strong>{safe(entry.get("experience_level"))}</strong></div>
+                    <div><span class="label">Use Case</span><strong>{safe(entry.get("main_use_case"))}</strong></div>
+                    <div><span class="label">Clarity</span><strong>{safe(entry.get("clarity_rating"))}</strong></div>
+                    <div><span class="label">Trust</span><strong>{safe(entry.get("trust_rating"))}</strong></div>
+                    <div><span class="label">Would Pay</span><strong>{safe(entry.get("would_pay"))}</strong></div>
+                    <div><span class="label">Price</span><strong>{safe(entry.get("price_preference"))}</strong></div>
+                </div>
+                <div class="text-grid">
+                    <section><span class="label">Liked</span><p>{safe(entry.get("liked"))}</p></section>
+                    <section><span class="label">Confusing</span><p>{safe(entry.get("confusing"))}</p></section>
+                    <section><span class="label">Missing Features</span><p>{safe(entry.get("missing_features"))}</p></section>
+                    <section><span class="label">General Feedback</span><p>{safe(entry.get("general_feedback"))}</p></section>
+                </div>
+            </article>
+            """
+        )
+
+    entries_html = "\n".join(cards) if cards else '<div class="empty">No feedback yet.</div>'
+
+    return f"""
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>NOVAQ AI Feedback Admin</title>
+
+    <style>
+        * {{ box-sizing: border-box; }}
+
+        :root {{
+            --bg: #050810;
+            --panel: rgba(14, 24, 42, 0.9);
+            --panel-strong: rgba(17, 31, 55, 0.96);
+            --line: rgba(255, 255, 255, 0.1);
+            --text: #f4f8ff;
+            --muted: #91a0b8;
+            --soft: #c9d5e8;
+            --cyan: #00ffc2;
+            --blue: #4b8dff;
+        }}
+
+        body {{
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--text);
+            background:
+                linear-gradient(145deg, rgba(0, 255, 194, 0.1), transparent 34%),
+                linear-gradient(215deg, rgba(75, 141, 255, 0.12), transparent 36%),
+                linear-gradient(180deg, #050810 0%, #09111f 52%, #050810 100%);
+        }}
+
+        .page {{
+            width: min(1180px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 32px 0 42px;
+        }}
+
+        .header {{
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 18px;
+        }}
+
+        h1 {{
+            margin: 0;
+            font-size: 34px;
+            letter-spacing: 0;
+        }}
+
+        .subtitle {{
+            margin-top: 8px;
+            color: var(--muted);
+        }}
+
+        .nav {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+        }}
+
+        .nav a {{
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 950;
+        }}
+
+        .summary {{
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }}
+
+        .summary-card,
+        .entry-card {{
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--panel);
+        }}
+
+        .summary-card {{
+            min-height: 94px;
+            padding: 15px;
+        }}
+
+        .summary-card strong {{
+            display: block;
+            margin-top: 8px;
+            font-size: 26px;
+        }}
+
+        .label {{
+            display: block;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 850;
+            text-transform: uppercase;
+        }}
+
+        .entry-list {{
+            display: grid;
+            gap: 14px;
+        }}
+
+        .entry-card {{
+            padding: 16px;
+        }}
+
+        .entry-top,
+        .meta-grid,
+        .text-grid {{
+            display: grid;
+            gap: 10px;
+        }}
+
+        .entry-top {{
+            grid-template-columns: 120px minmax(0, 1fr);
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
+            margin-bottom: 12px;
+        }}
+
+        .meta-grid {{
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            margin-bottom: 12px;
+        }}
+
+        .meta-grid div,
+        .text-grid section {{
+            min-width: 0;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.035);
+        }}
+
+        .meta-grid strong {{
+            display: block;
+            margin-top: 6px;
+            color: var(--soft);
+            word-break: break-word;
+        }}
+
+        .text-grid {{
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }}
+
+        p {{
+            margin: 7px 0 0;
+            color: var(--soft);
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }}
+
+        .empty {{
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            padding: 22px;
+            color: var(--muted);
+            text-align: center;
+        }}
+
+        @media (max-width: 980px) {{
+            .summary,
+            .meta-grid,
+            .text-grid {{
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }}
+        }}
+
+        @media (max-width: 640px) {{
+            .page {{
+                width: min(100% - 24px, 1180px);
+            }}
+
+            .header {{
+                align-items: flex-start;
+                flex-direction: column;
+            }}
+
+            .summary,
+            .entry-top,
+            .meta-grid,
+            .text-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <header class="header">
+            <div>
+                <h1>NOVAQ AI Feedback Admin</h1>
+                <div class="subtitle">Beta user feedback and MVP signal quality notes</div>
+            </div>
+        </header>
+
+        <nav class="nav" aria-label="Admin feedback navigation">
+            <a href="/">Home</a>
+            <a href="/feed-dashboard">Decision Feed</a>
+            <a href="/tracking-dashboard">Tracking</a>
+            <a href="/performance-dashboard">Performance</a>
+            <a href="/logout">Logout</a>
+        </nav>
+
+        <section class="summary">
+            <article class="summary-card"><span class="label">Total</span><strong>{safe(summary["total"])}</strong></article>
+            <article class="summary-card"><span class="label">Avg Clarity</span><strong>{safe(summary["average_clarity_rating"])}</strong></article>
+            <article class="summary-card"><span class="label">Avg Trust</span><strong>{safe(summary["average_trust_rating"])}</strong></article>
+            <article class="summary-card"><span class="label">Would Pay Yes</span><strong>{safe(summary["would_pay_yes"])}</strong></article>
+            <article class="summary-card"><span class="label">Would Pay Maybe</span><strong>{safe(summary["would_pay_maybe"])}</strong></article>
+            <article class="summary-card"><span class="label">Would Pay No</span><strong>{safe(summary["would_pay_no"])}</strong></article>
+        </section>
+
+        <section class="entry-list">
+            {entries_html}
+        </section>
+    </main>
+</body>
+</html>
+    """
+
+
+@app.get("/api/feedback-summary")
+def api_feedback_summary(request: Request):
+    require_access(request)
+    return get_feedback_summary()
+
+
+@app.get("/api/feedback")
+def api_feedback(request: Request, limit: int = 100):
+    require_access(request)
+    return list_feedback_entries(limit)
 
 
 @app.get("/health")

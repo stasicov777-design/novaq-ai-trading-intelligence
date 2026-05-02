@@ -92,6 +92,14 @@ python start.py
   - `/performance-dashboard`
   - tracking/evaluation endpoints
 
+## Beta Feedback
+
+- Public feedback page: `/feedback`
+- Protected admin feedback dashboard: `/admin-feedback`
+- Protected feedback API:
+  - `/api/feedback-summary`
+  - `/api/feedback`
+
 ## Deployment Notes
 
 SQLite is OK for a local MVP. For production with many users, move to PostgreSQL.

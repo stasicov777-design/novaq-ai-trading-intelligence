@@ -9,6 +9,7 @@ PUBLIC_ENDPOINTS = [
     "/",
     "/api",
     "/health",
+    "/feedback",
     "/decision/BTCUSDT",
     "/feed?symbols=BTCUSDT,ETHUSDT",
 ]
@@ -16,6 +17,8 @@ PUBLIC_ENDPOINTS = [
 PROTECTED_ENDPOINTS = [
     "/tracking-summary",
     "/performance-analytics",
+    "/api/feedback-summary",
+    "/api/feedback",
 ]
 
 
