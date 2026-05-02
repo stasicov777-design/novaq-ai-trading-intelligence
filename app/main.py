@@ -1,8 +1,17 @@
 ﻿from datetime import datetime, timezone
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from urllib.parse import parse_qs
+
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.schemas.decision import DecisionResponse, MarketData
+from app.services.access_control import (
+    ACCESS_COOKIE_NAME,
+    has_access,
+    is_access_enabled,
+    require_access,
+    validate_access_code,
+)
 from app.services.candle_data import fetch_candles
 from app.services.decision_engine import build_decision
 from app.services.feed_engine import build_decision_feed
@@ -48,8 +57,11 @@ def api_root():
         "evaluate_open_signals": "/evaluate-open-signals",
         "performance_analytics": "/performance-analytics",
         "performance_dashboard": "/performance-dashboard",
+        "login": "/login",
+        "logout": "/logout",
         "docs": "/docs",
         "health": "/health",
+        "access_control": "enabled" if is_access_enabled() else "disabled",
         "time_utc": datetime.now(timezone.utc).isoformat()
     }
 
@@ -474,7 +486,7 @@ def home():
                 </p>
                 <div class="actions" aria-label="Primary navigation">
                     <a class="button" href="/feed-dashboard">Open Decision Feed</a>
-                    <a class="button" href="/tracking-dashboard">Track Paper Signals</a>
+                    <a class="button" href="/login">Demo Login</a>
                     <a class="button secondary" href="/performance-dashboard">View Analytics</a>
                     <a class="button secondary" href="/docs">API Docs</a>
                 </div>
@@ -573,6 +585,224 @@ def home():
     """.replace("{{APP_VERSION}}", APP_VERSION)
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    error_block = ""
+    if request.query_params.get("error") == "1":
+        error_block = '<div class="error">Invalid access code.</div>'
+
+    return """
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <title>NOVAQ AI Demo Access</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        :root {
+            --bg: #050810;
+            --panel: rgba(14, 24, 42, 0.92);
+            --line: rgba(255, 255, 255, 0.1);
+            --line-bright: rgba(0, 255, 194, 0.24);
+            --text: #f4f8ff;
+            --muted: #91a0b8;
+            --cyan: #00ffc2;
+            --blue: #4b8dff;
+            --red: #ff5c7a;
+        }
+
+        html {
+            min-height: 100%;
+            background: var(--bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--text);
+            background:
+                linear-gradient(145deg, rgba(0, 255, 194, 0.12), transparent 34%),
+                linear-gradient(215deg, rgba(75, 141, 255, 0.15), transparent 36%),
+                linear-gradient(180deg, #050810 0%, #09111f 52%, #050810 100%);
+        }
+
+        .shell {
+            width: min(460px, 100%);
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 18px;
+            font-size: 22px;
+            font-weight: 950;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line-bright);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(0, 255, 194, 0.18), rgba(75, 141, 255, 0.18));
+            color: var(--cyan);
+            font-size: 15px;
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 24px;
+            background: var(--panel);
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 32px;
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .subtitle {
+            margin: 10px 0 22px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        form {
+            display: grid;
+            gap: 12px;
+        }
+
+        input {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px 15px;
+            background: rgba(255, 255, 255, 0.055);
+            color: var(--text);
+            font-size: 15px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--line-bright);
+        }
+
+        button,
+        .link-button {
+            min-height: 46px;
+            border: 0;
+            border-radius: 8px;
+            padding: 13px 16px;
+            color: #031018;
+            background: linear-gradient(135deg, var(--cyan), var(--blue));
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 950;
+            text-decoration: none;
+            text-align: center;
+        }
+
+        .secondary-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .secondary-row .link-button {
+            flex: 1;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.055);
+            border: 1px solid var(--line);
+        }
+
+        .error {
+            margin-bottom: 14px;
+            border: 1px solid rgba(255, 92, 122, 0.35);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: rgba(255, 92, 122, 0.1);
+            color: var(--red);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .disclaimer {
+            margin: 16px 0 0;
+            color: #738197;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="shell">
+        <div class="brand" aria-label="NOVAQ AI">
+            <span class="brand-mark">NQ</span>
+            <span>NOVAQ AI</span>
+        </div>
+
+        <section class="panel">
+            <h1>Protected Demo Access</h1>
+            <p class="subtitle">Unlock paper tracking and performance analytics for this demo environment.</p>
+            {{ERROR_BLOCK}}
+            <form method="post" action="/login">
+                <input type="password" name="access_code" placeholder="Enter access code" autocomplete="current-password" required />
+                <button type="submit">Unlock Demo</button>
+            </form>
+            <div class="secondary-row">
+                <a class="link-button" href="/feed-dashboard">Decision Feed</a>
+                <a class="link-button" href="/">Home</a>
+            </div>
+            <p class="disclaimer">Access is required for paper tracking and performance analytics.</p>
+        </section>
+    </main>
+</body>
+</html>
+    """.replace("{{ERROR_BLOCK}}", error_block)
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    body = await request.body()
+    form_data = parse_qs(body.decode("utf-8"))
+    access_code = form_data.get("access_code", [""])[0]
+
+    if validate_access_code(access_code):
+        response = RedirectResponse(url="/tracking-dashboard", status_code=303)
+        response.set_cookie(
+            key=ACCESS_COOKIE_NAME,
+            value=access_code,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=60 * 60 * 24 * 7,
+        )
+        return response
+
+    return RedirectResponse(url="/login?error=1", status_code=303)
+
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse(url="/", status_code=303)
+    response.delete_cookie(ACCESS_COOKIE_NAME)
+    return response
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -617,37 +847,44 @@ def get_feed(symbols: str | None = None):
 
 
 @app.post("/track/{symbol}")
-def create_tracked_signal(symbol: str):
+def create_tracked_signal(request: Request, symbol: str):
+    require_access(request)
     return track_signal(symbol)
 
 
 @app.get("/track/{symbol}")
-def create_tracked_signal_get(symbol: str):
+def create_tracked_signal_get(request: Request, symbol: str):
+    require_access(request)
     return track_signal(symbol)
 
 
 @app.get("/tracked-signals")
-def get_tracked_signals(status: str | None = None, limit: int = 50):
+def get_tracked_signals(request: Request, status: str | None = None, limit: int = 50):
+    require_access(request)
     return list_tracked_signals(status, limit)
 
 
 @app.post("/tracked-signals/{signal_id}/close")
-def close_tracked_signal(signal_id: int, close_reason: str = "MANUAL_CLOSE"):
+def close_tracked_signal(request: Request, signal_id: int, close_reason: str = "MANUAL_CLOSE"):
+    require_access(request)
     return close_signal(signal_id, close_reason)
 
 
 @app.get("/tracking-summary")
-def tracking_summary():
+def tracking_summary(request: Request):
+    require_access(request)
     return get_tracking_summary()
 
 
 @app.post("/evaluate-open-signals")
 def evaluate_open_signals_endpoint(
+    request: Request,
     take_profit_percent: float = 1.0,
     stop_loss_percent: float = -0.7,
     max_age_minutes: int = 60,
     limit: int = 100
 ):
+    require_access(request)
     return evaluate_open_signals(
         take_profit_percent=take_profit_percent,
         stop_loss_percent=stop_loss_percent,
@@ -658,11 +895,13 @@ def evaluate_open_signals_endpoint(
 
 @app.get("/evaluate-open-signals")
 def evaluate_open_signals_get(
+    request: Request,
     take_profit_percent: float = 1.0,
     stop_loss_percent: float = -0.7,
     max_age_minutes: int = 60,
     limit: int = 100
 ):
+    require_access(request)
     return evaluate_open_signals(
         take_profit_percent=take_profit_percent,
         stop_loss_percent=stop_loss_percent,
@@ -672,12 +911,16 @@ def evaluate_open_signals_get(
 
 
 @app.get("/performance-analytics")
-def performance_analytics(limit: int = 1000):
+def performance_analytics(request: Request, limit: int = 1000):
+    require_access(request)
     return build_performance_analytics(limit)
 
 
 @app.get("/performance-dashboard", response_class=HTMLResponse)
-def performance_dashboard():
+def performance_dashboard(request: Request):
+    if not has_access(request):
+        return RedirectResponse(url="/login", status_code=303)
+
     return """
 <!DOCTYPE html>
 <html lang="en" translate="no">
@@ -1023,6 +1266,7 @@ def performance_dashboard():
             <a href="/tracking-dashboard">Signal Tracking</a>
             <a href="/performance-dashboard">Performance Analytics</a>
             <a href="/docs">API Docs</a>
+            <a href="/logout">Logout</a>
         </nav>
 
         <section class="toolbar">
@@ -1252,7 +1496,10 @@ def performance_dashboard():
 
 
 @app.get("/tracking-dashboard", response_class=HTMLResponse)
-def tracking_dashboard():
+def tracking_dashboard(request: Request):
+    if not has_access(request):
+        return RedirectResponse(url="/login", status_code=303)
+
     return """
 <!DOCTYPE html>
 <html lang="en" translate="no">
@@ -1601,6 +1848,7 @@ def tracking_dashboard():
             <a href="/tracking-dashboard">Signal Tracking</a>
             <a href="/performance-dashboard">Performance Analytics</a>
             <a href="/docs">API Docs</a>
+            <a href="/logout">Logout</a>
         </nav>
 
         <section class="toolbar">
@@ -2346,6 +2594,12 @@ def feed_dashboard():
         async function trackFeedSignal(symbol) {
             try {
                 const response = await fetch(`/track/${encodeURIComponent(symbol)}`, { method: "POST" });
+
+                if (response.status === 401) {
+                    alert("Access code required. Please open /login to use paper tracking.");
+                    return;
+                }
+
                 const data = await response.json();
 
                 if (!response.ok) {

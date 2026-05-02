@@ -16,6 +16,15 @@
 4. Healthcheck path: `/health`.
 5. Add a persistent disk if SQLite tracking history must persist.
 
+### Render Environment Variables
+
+```text
+ACCESS_CONTROL_ENABLED=true
+ACCESS_CODE=<your-secret-access-code>
+```
+
+Without `ACCESS_CODE`, the app uses the default demo code. For public deployment, always set a custom `ACCESS_CODE` in Render.
+
 ## Docker
 
 ```bash

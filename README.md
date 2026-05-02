@@ -78,6 +78,20 @@ python start.py
 - `GET /tracking-summary`
 - `GET /performance-analytics`
 
+## Demo Access Control
+
+- Tracking and performance dashboards are protected by an access code.
+- Set `ACCESS_CODE` in production environment variables.
+- Public pages remain available:
+  - `/`
+  - `/feed-dashboard`
+  - `/dashboard`
+  - `/docs`
+- Protected pages:
+  - `/tracking-dashboard`
+  - `/performance-dashboard`
+  - tracking/evaluation endpoints
+
 ## Deployment Notes
 
 SQLite is OK for a local MVP. For production with many users, move to PostgreSQL.
