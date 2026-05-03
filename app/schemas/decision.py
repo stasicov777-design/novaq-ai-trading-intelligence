@@ -28,6 +28,16 @@ class DecisionResponse(BaseModel):
     opportunity_score: int
     quality_label: Literal["WEAK", "NORMAL", "STRONG", "TOP"]
     why_ranked: str
+    entry_reference_price: float | None
+    invalidation_level: float | None
+    invalidation_reason: str
+    stop_zone: dict[str, Any] | None
+    take_profit_zone: dict[str, Any] | None
+    risk_reward_ratio: float | None
+    decision_valid_until: str
+    level_type: str
+    level_source: str
+    level_timeframe: str
     reasoning: str
     failure_scenario: str
     alternative_action: str

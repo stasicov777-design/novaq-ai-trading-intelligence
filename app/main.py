@@ -107,6 +107,7 @@ def api_root():
         "feedback": "/feedback",
         "feedback_summary": "/api/feedback-summary",
         "admin_feedback": "/admin-feedback",
+        "trade_levels": "enabled",
         "database_health": "/health/db",
         "login": "/login",
         "logout": "/logout",
@@ -1166,6 +1167,22 @@ def beta_onboarding(request: Request):
                     <span class="field-name">{{SAFER_ALTERNATIVE}}</span>
                     <p>{{SAFER_ALTERNATIVE_TEXT}}</p>
                 </article>
+                <article class="card decision-card">
+                    <span class="field-name">{{INVALIDATION_LEVEL}}</span>
+                    <p>{{INVALIDATION_LEVEL_TEXT}}</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">{{STOP_ZONE}}</span>
+                    <p>{{STOP_ZONE_TEXT}}</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">{{TAKE_PROFIT_ZONE}}</span>
+                    <p>{{TAKE_PROFIT_ZONE_TEXT}}</p>
+                </article>
+                <article class="card decision-card">
+                    <span class="field-name">{{VALID_UNTIL}}</span>
+                    <p>{{VALID_UNTIL_TEXT}}</p>
+                </article>
             </div>
         </section>
 
@@ -1251,6 +1268,14 @@ def beta_onboarding(request: Request):
         "FAILURE_SCENARIO_TEXT": t(lang, "failure_scenario_text"),
         "SAFER_ALTERNATIVE": t(lang, "safer_alternative"),
         "SAFER_ALTERNATIVE_TEXT": t(lang, "safer_alternative_text"),
+        "INVALIDATION_LEVEL": t(lang, "invalidation_level"),
+        "INVALIDATION_LEVEL_TEXT": t(lang, "invalidation_level_text"),
+        "STOP_ZONE": t(lang, "stop_zone"),
+        "STOP_ZONE_TEXT": t(lang, "stop_zone_text"),
+        "TAKE_PROFIT_ZONE": t(lang, "take_profit_zone"),
+        "TAKE_PROFIT_ZONE_TEXT": t(lang, "take_profit_zone_text"),
+        "VALID_UNTIL": t(lang, "valid_until"),
+        "VALID_UNTIL_TEXT": t(lang, "valid_until_text"),
         "WHAT_FEEDBACK_WE_NEED": t(lang, "what_feedback_we_need"),
         "UNDERSTANDABILITY": t(lang, "understandability"),
         "UNDERSTANDABILITY_TEXT": t(lang, "understandability_text"),
@@ -4067,6 +4092,43 @@ def feed_dashboard():
             overflow-wrap: anywhere;
         }
 
+        .trade-plan-mini {
+            border: 1px solid rgba(0, 255, 194, 0.15);
+            border-radius: 8px;
+            padding: 12px;
+            background: linear-gradient(135deg, rgba(0, 255, 194, 0.07), rgba(75, 141, 255, 0.045));
+            margin-bottom: 12px;
+        }
+
+        .trade-plan-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 9px;
+        }
+
+        .trade-plan-cell {
+            min-width: 0;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 9px;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .trade-plan-cell strong {
+            display: block;
+            margin-top: 5px;
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        .trade-plan-empty {
+            margin-top: 8px;
+            color: #b7c2d3;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
         .copy-block {
             border-top: 1px solid var(--line);
             padding-top: 12px;
@@ -4110,7 +4172,8 @@ def feed_dashboard():
             }
 
             .metrics,
-            .signal-row {
+            .signal-row,
+            .trade-plan-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }
@@ -4194,6 +4257,14 @@ def feed_dashboard():
             return String(value);
         }
 
+        function formatPrice(value) {
+            if (value === null || value === undefined || value === "") return "--";
+            const num = Number(value);
+            if (Number.isNaN(num)) return safeText(value);
+            const maximumFractionDigits = Math.abs(num) >= 1000 ? 2 : Math.abs(num) >= 1 ? 4 : 8;
+            return "$" + num.toLocaleString("en-US", { maximumFractionDigits });
+        }
+
         function enumBadge(value) {
             return `<span class="badge notranslate">${escapeHtml(safeText(value))}</span>`;
         }
@@ -4259,6 +4330,26 @@ def feed_dashboard():
             const signalSet = item.signals?.signals || {};
             const opportunityScore = item.opportunity_score ?? 0;
             const qualityLabel = item.quality_label || "WEAK";
+            const noDirectionalPlan = ["WAIT", "HOLD", "ARBITRAGE"].includes(String(item.action || "").toUpperCase())
+                && (item.invalidation_level === null || item.invalidation_level === undefined);
+            const tradePlanHtml = noDirectionalPlan
+                ? `
+                    <div class="trade-plan-mini">
+                        <div class="label">Trade Plan</div>
+                        <div class="trade-plan-empty">No active directional trade plan.</div>
+                    </div>
+                `
+                : `
+                    <div class="trade-plan-mini">
+                        <div class="label">Trade Plan</div>
+                        <div class="trade-plan-grid">
+                            <div class="trade-plan-cell"><div class="label">Invalidation</div><strong>${escapeHtml(formatPrice(item.invalidation_level))}</strong></div>
+                            <div class="trade-plan-cell"><div class="label">R/R</div><strong>${escapeHtml(safeText(item.risk_reward_ratio))}</strong></div>
+                            <div class="trade-plan-cell"><div class="label">Target 1</div><strong>${escapeHtml(formatPrice(item.take_profit_zone?.target_1))}</strong></div>
+                            <div class="trade-plan-cell"><div class="label">Valid Until</div><strong>${escapeHtml(safeText(item.decision_valid_until))}</strong></div>
+                        </div>
+                    </div>
+                `;
             const errorBlock = item.error
                 ? `<div class="error">${escapeHtml(item.error)}</div>`
                 : "";
@@ -4298,6 +4389,8 @@ def feed_dashboard():
                         <div class="pill"><span class="label">RSI</span><br>${enumBadge(signalSet.rsi)}</div>
                         <div class="pill"><span class="label">Momentum</span><br>${enumBadge(signalSet.momentum)}</div>
                     </div>
+
+                    ${tradePlanHtml}
 
                     <div class="copy-block">
                         <div><div class="label">Why Ranked</div><p>${escapeHtml(item.why_ranked)}</p></div>
@@ -4496,6 +4589,45 @@ def dashboard():
             margin-bottom: 22px;
         }
 
+        .trade-plan {
+            margin-bottom: 22px;
+            border: 1px solid rgba(0, 255, 194, 0.15);
+            border-radius: 18px;
+            padding: 16px;
+            background: linear-gradient(135deg, rgba(0, 255, 194, 0.07), rgba(75, 141, 255, 0.045));
+        }
+
+        .trade-plan-title {
+            margin-bottom: 12px;
+            color: #00ffc2;
+            font-size: 13px;
+            font-weight: 950;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .trade-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .trade-metric {
+            min-width: 0;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 14px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .trade-metric strong {
+            display: block;
+            color: #f3f6fb;
+            font-size: 15px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+
         .metric {
             background: rgba(255, 255, 255, 0.045);
             border: 1px solid rgba(255, 255, 255, 0.06);
@@ -4596,6 +4728,7 @@ def dashboard():
         @media (max-width: 860px) {
             .hero { grid-template-columns: 1fr; }
             .grid { grid-template-columns: 1fr; }
+            .trade-grid { grid-template-columns: 1fr; }
             .action { font-size: 46px; }
             .header {
                 flex-direction: column;
@@ -4655,6 +4788,40 @@ def dashboard():
                     </div>
                 </div>
 
+                <div class="trade-plan">
+                    <div class="trade-plan-title">Trade Plan</div>
+                    <div class="trade-grid">
+                        <div class="trade-metric">
+                            <div class="label">Entry Reference</div>
+                            <strong id="entryReference">--</strong>
+                        </div>
+                        <div class="trade-metric">
+                            <div class="label">Invalidation Level</div>
+                            <strong id="invalidationLevel">--</strong>
+                        </div>
+                        <div class="trade-metric">
+                            <div class="label">Risk/Reward</div>
+                            <strong id="riskReward">--</strong>
+                        </div>
+                        <div class="trade-metric">
+                            <div class="label">Stop Zone</div>
+                            <strong id="stopZone">--</strong>
+                        </div>
+                        <div class="trade-metric">
+                            <div class="label">Take Profit Zone</div>
+                            <strong id="takeProfitZone">--</strong>
+                        </div>
+                        <div class="trade-metric">
+                            <div class="label">Valid Until</div>
+                            <strong id="validUntil">--</strong>
+                        </div>
+                    </div>
+                    <div class="text-block">
+                        <div class="label">Invalidation Reason</div>
+                        <p id="invalidationReason">--</p>
+                    </div>
+                </div>
+
                 <div class="text-block">
                     <div class="label">Reasoning</div>
                     <p id="reasoning">Loading decision...</p>
@@ -4709,6 +4876,24 @@ def dashboard():
             return String(value);
         }
 
+        function formatPrice(value) {
+            if (value === null || value === undefined || value === "") return "--";
+            const num = Number(value);
+            if (Number.isNaN(num)) return safeText(value);
+            const maximumFractionDigits = Math.abs(num) >= 1000 ? 2 : Math.abs(num) >= 1 ? 4 : 8;
+            return "$" + num.toLocaleString("en-US", { maximumFractionDigits });
+        }
+
+        function formatPriceZone(zone) {
+            if (!zone) return "--";
+            return `${formatPrice(zone.low)} - ${formatPrice(zone.high)}`;
+        }
+
+        function formatTargetZone(zone) {
+            if (!zone) return "--";
+            return `${formatPrice(zone.target_1)} / ${formatPrice(zone.target_2)}`;
+        }
+
         function enumBadge(value) {
             return `<span class="badge notranslate">${safeText(value)}</span>`;
         }
@@ -4733,6 +4918,13 @@ def dashboard():
             document.getElementById("reasoning").innerText = data.reasoning;
             document.getElementById("failureScenario").innerText = data.failure_scenario;
             document.getElementById("alternativeAction").innerText = data.alternative_action;
+            document.getElementById("entryReference").innerText = formatPrice(data.entry_reference_price);
+            document.getElementById("invalidationLevel").innerText = formatPrice(data.invalidation_level);
+            document.getElementById("stopZone").innerText = formatPriceZone(data.stop_zone);
+            document.getElementById("takeProfitZone").innerText = formatTargetZone(data.take_profit_zone);
+            document.getElementById("riskReward").innerText = data.risk_reward_ratio === null || data.risk_reward_ratio === undefined ? "--" : safeText(data.risk_reward_ratio);
+            document.getElementById("validUntil").innerText = safeText(data.decision_valid_until);
+            document.getElementById("invalidationReason").innerText = safeText(data.invalidation_reason);
 
             document.getElementById("price").innerText = "$" + Number(data.market.price).toLocaleString("en-US", { maximumFractionDigits: 2 });
             document.getElementById("change24h").innerText = formatPercent(data.market.price_change_percent_24h);

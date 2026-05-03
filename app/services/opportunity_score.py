@@ -29,6 +29,16 @@ def calculate_opportunity_score(decision: dict) -> dict:
     trend = signal_values.get("trend")
     rsi = signal_values.get("rsi")
     momentum = signal_values.get("momentum")
+    risk_reward_ratio = decision.get("risk_reward_ratio")
+
+    try:
+        risk_reward_value = (
+            float(risk_reward_ratio)
+            if risk_reward_ratio is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        risk_reward_value = None
 
     score = confidence * 0.45 + tier * 8
 
@@ -87,6 +97,14 @@ def calculate_opportunity_score(decision: dict) -> dict:
     elif expected_return < 0.2:
         score -= 4
 
+    if risk_reward_value is not None:
+        if risk_reward_value >= 2:
+            score += 8
+        elif risk_reward_value >= 1.5:
+            score += 5
+        elif risk_reward_value < 1:
+            score -= 10
+
     if "error" in decision:
         score = min(score, 10)
     if action == "WAIT":
@@ -121,10 +139,15 @@ def calculate_opportunity_score(decision: dict) -> dict:
     if momentum:
         context.append(f"{momentum} momentum")
 
+    risk_reward_note = ""
+    if risk_reward_value is not None:
+        risk_reward_note = f" Risk/reward is approximately {risk_reward_value:g}."
+
     why_ranked = (
         f"Ranked as {quality_label} because "
         + ", ".join(context)
         + "."
+        + risk_reward_note
     )
 
     return {

@@ -108,6 +108,18 @@ Public beta onboarding page:
 
 It explains how to test the product, how to read decisions, and how to send useful feedback.
 
+## Trade Levels / Invalidation
+
+NOVAQ AI provides educational trade context:
+
+- invalidation level
+- stop zone
+- take profit zone
+- risk/reward ratio
+- decision validity window
+
+These values are generated from recent candle structure and are not financial advice.
+
 ## Language Switch
 
 Public pages support EN / UA language switching without browser auto-translation.

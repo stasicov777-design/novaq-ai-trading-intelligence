@@ -3,6 +3,7 @@ from app.services.market_state import classify_market_state
 from app.services.opportunity_score import calculate_opportunity_score
 from app.services.risk_engine import get_position_size, liquidity_risk_check
 from app.services.signal_engine import build_signals
+from app.services.trade_levels import build_trade_levels
 
 
 def build_decision(symbol: str) -> dict:
@@ -14,6 +15,13 @@ def build_decision(symbol: str) -> dict:
     liquidity_decision = liquidity_risk_check(market, market_state)
     if liquidity_decision:
         liquidity_decision["signals"] = signals
+        liquidity_decision.update(build_trade_levels(
+            action=liquidity_decision["action"],
+            market=market,
+            market_state=market_state,
+            signals=signals,
+            interval="1h"
+        ))
         liquidity_decision.update(calculate_opportunity_score(liquidity_decision))
         return liquidity_decision
 
@@ -108,5 +116,12 @@ def build_decision(symbol: str) -> dict:
         "market": market
     }
 
+    decision.update(build_trade_levels(
+        action=decision["action"],
+        market=market,
+        market_state=market_state,
+        signals=signals,
+        interval="1h"
+    ))
     decision.update(calculate_opportunity_score(decision))
     return decision

@@ -32,6 +32,16 @@ def _build_error_item(symbol: str, error: Exception) -> dict:
         "opportunity_score": 0,
         "quality_label": "WEAK",
         "why_ranked": "Ranked as WEAK because market or signal data is unavailable.",
+        "entry_reference_price": None,
+        "invalidation_level": None,
+        "invalidation_reason": "Trade levels are unavailable because candle data could not be loaded.",
+        "stop_zone": None,
+        "take_profit_zone": None,
+        "risk_reward_ratio": None,
+        "decision_valid_until": None,
+        "level_type": "DATA_UNAVAILABLE",
+        "level_source": "unavailable",
+        "level_timeframe": "1h",
         "error": str(error)
     }
 

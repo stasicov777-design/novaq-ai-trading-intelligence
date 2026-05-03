@@ -55,6 +55,32 @@ def main() -> int:
 
             print(f"Storage backend: {data.get('storage_backend', 'unknown')}")
 
+        if endpoint == "/decision/BTCUSDT":
+            try:
+                data = response.json()
+            except ValueError:
+                print("ERROR /decision/BTCUSDT: invalid JSON")
+                failed = True
+                continue
+
+            required_decision_fields = {
+                "invalidation_level",
+                "invalidation_reason",
+                "stop_zone",
+                "take_profit_zone",
+                "risk_reward_ratio",
+                "decision_valid_until",
+                "level_type",
+            }
+            missing_fields = required_decision_fields - set(data.keys())
+            if missing_fields:
+                print(
+                    "ERROR /decision/BTCUSDT: missing trade level fields "
+                    f"{sorted(missing_fields)}"
+                )
+                failed = True
+                continue
+
         if endpoint == "/health/db":
             try:
                 data = response.json()
